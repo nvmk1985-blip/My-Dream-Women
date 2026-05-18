@@ -37,6 +37,34 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
 
+      - name: Fetch custom app icon from Cloudinary
+        env:
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: |
+          echo "Checking for custom app icon in Cloudinary my-girls/app-icon/..."
+          ICON_URL=$(curl -sf -u "$CLOUDINARY_API_KEY:$CLOUDINARY_API_SECRET" \
+            "https://api.cloudinary.com/v1_1/$CLOUDINARY_CLOUD_NAME/resources/image?prefix=my-girls/app-icon/&type=upload&max_results=1" \
+            | node -e "
+              const d=[];
+              process.stdin.on('data',c=>d.push(c));
+              process.stdin.on('end',()=>{
+                try {
+                  const r=JSON.parse(d.join(''));
+                  const res=r.resources;
+                  if(res&&res.length>0) console.log(res[0].secure_url);
+                } catch(e){}
+              });" 2>/dev/null || true)
+          if [ -n "$ICON_URL" ]; then
+            echo "Custom icon found: $ICON_URL"
+            curl -sL "$ICON_URL" -o artifacts/tamil-ai-chat/assets/images/icon.png
+            curl -sL "$ICON_URL" -o artifacts/tamil-ai-chat/assets/images/adaptive-icon.png
+            echo "✅ icon.png + adaptive-icon.png replaced with custom icon"
+          else
+            echo "No custom icon found — using default icon"
+          fi
+
       - name: Build APK (EAS local — no credits needed)
         working-directory: artifacts/tamil-ai-chat
         env:
