@@ -22,7 +22,6 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # cui-llama.rn requires NDK r26+ for C++ llama.cpp compilation
       - name: Setup Android NDK
         uses: android-actions/setup-android@v3
         with:
@@ -84,17 +83,28 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
         run: |
-          # Sanitize token — remove ALL whitespace/newlines
           export EXPO_TOKEN=$(echo "$EXPO_TOKEN" | tr -d '[:space:]')
           echo "Token length: ${#EXPO_TOKEN}"
           eas whoami
+          # Run build and capture output to find APK path
           eas build --platform android --profile preview --local --non-interactive 2>&1 | tee /tmp/build.log
-          # Find the APK
-          APK=$(find /tmp /home/runner -name "*.apk" 2>/dev/null | grep -v node_modules | head -1)
-          if [ -z "$APK" ]; then
-            APK=$(find . -name "*.apk" 2>/dev/null | grep -v node_modules | head -1)
+          # EAS local build outputs APK path at end of log
+          APK=$(grep -oE '/[^ ]+\.apk' /tmp/build.log | grep -v node_modules | tail -1)
+          # Fallback: search common EAS output locations (exclude repo files)
+          if [ -z "$APK" ] || [ ! -s "$APK" ]; then
+            APK=$(find /tmp -name "*.apk" 2>/dev/null | grep -v node_modules | xargs ls -S 2>/dev/null | head -1)
+          fi
+          if [ -z "$APK" ] || [ ! -s "$APK" ]; then
+            APK=$(find /home/runner -name "*.apk" 2>/dev/null | grep -v "node_modules\|\.git\|public/" | xargs ls -S 2>/dev/null | head -1)
           fi
           echo "APK found: $APK"
+          SIZE=$(stat -c%s "$APK" 2>/dev/null || echo 0)
+          echo "APK size: $SIZE bytes"
+          if [ "$SIZE" -lt 1000000 ]; then
+            echo "❌ APK too small ($SIZE bytes) — build may have failed"
+            cat /tmp/build.log | tail -50
+            exit 1
+          fi
           echo "APK_FILE=$APK" >> $GITHUB_ENV
           ls -lh "$APK"
 
@@ -106,12 +116,11 @@ jobs:
           cp "$APK_FILE" my-girls-v${{ github.run_number }}.apk
           gh release create "$TAG" \
             "my-girls-v${{ github.run_number }}.apk" \
-            --title "My Girls — Build ${{ github.run_number }} (LLM)" \
-            --notes "Tamil AI Chat with offline Llama 3.2 3B. Install directly on Android." \
+            --title "My Girls — Build ${{ github.run_number }}" \
+            --notes "Tamil AI Chat APK — direct install on Android. Build ${{ github.run_number }}." \
             --repo ${{ github.repository }}
-          echo ""
           echo "============================================"
-          echo "DIRECT APK DOWNLOAD (no ZIP!):"
+          echo "✅ DIRECT APK DOWNLOAD:"
           echo "https://github.com/${{ github.repository }}/releases/download/$TAG/my-girls-v${{ github.run_number }}.apk"
           echo "============================================"
 
