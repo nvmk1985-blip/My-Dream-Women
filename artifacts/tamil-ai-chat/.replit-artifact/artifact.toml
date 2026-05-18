@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "Tamil AI Chat"
+version = "1.0.0"
+id = "artifacts/tamil-ai-chat"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 24575
+
+[services.development]
+run = "pnpm --filter @workspace/tamil-ai-chat run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/tamil-ai-chat", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/tamil-ai-chat", "run", "serve" ]
+
+[services.env]
+PORT = "24575"
+BASE_PATH = "/"
