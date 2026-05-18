@@ -1,0 +1,380 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, ScrollView,
+  StyleSheet, Alert, ActivityIndicator, Image, Modal, Switch,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Stack, useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
+import { ALL_PERSONAS, Persona } from '../constants/personas';
+import { ParamsStore } from '../context/params-store';
+import { uploadToCloudinary } from '../services/api';
+
+export default function EditCharacterScreen() {
+  const router = useRouter();
+  const personaId = ParamsStore.getEditPersonaId() ?? '';
+  const base = ALL_PERSONAS.find(p => p.id === personaId);
+
+  const [persona, setPersona] = useState<Persona | null>(null);
+  const [name, setName] = useState('');
+  const [avatarLetter, setAvatarLetter] = useState('');
+  const [greeting, setGreeting] = useState('');
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [faceDesc, setFaceDesc] = useState('');
+  const [bodyDesc, setBodyDesc] = useState('');
+  const [attireDesc, setAttireDesc] = useState('');
+  const [avatarPhotoUri, setAvatarPhotoUri] = useState<string | undefined>(undefined);
+  const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [showCloudUrl, setShowCloudUrl] = useState(false);
+  const [cloudUrlInput, setCloudUrlInput] = useState('');
+  const [normalMode, setNormalMode] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!base) return;
+      try {
+        const [saved, moodRaw] = await AsyncStorage.multiGet([
+          `persona_edit_${base.id}`,
+          `mood_mode_${base.id}`,
+        ]);
+        const data = saved[1] ? JSON.parse(saved[1]) : {};
+        setPersona(base);
+        setName(data.name ?? base.name);
+        setAvatarLetter(data.avatarLetter ?? base.avatarLetter ?? base.emoji);
+        setGreeting(data.greeting ?? base.greeting ?? '');
+        setSystemPrompt(data.prompt ?? base.prompt);
+        setFaceDesc(data.faceDesc ?? base.faceDesc ?? '');
+        setBodyDesc(data.bodyDesc ?? base.bodyDesc ?? '');
+        setAttireDesc(data.attireDesc ?? base.attireDesc ?? '');
+        setAvatarPhotoUri(data.avatarPhotoUri);
+        setNormalMode(moodRaw[1] === 'normal');
+      } catch {}
+    };
+    load();
+  }, [personaId]);
+
+  const toggleNormalMode = async (val: boolean) => {
+    setNormalMode(val);
+    if (base) {
+      await AsyncStorage.setItem(`mood_mode_${base.id}`, val ? 'normal' : 'presana');
+    }
+  };
+
+  const handleSave = async () => {
+    if (!persona) return;
+    setSaving(true);
+    try {
+      const data = {
+        name, avatarLetter, greeting, prompt: systemPrompt,
+        faceDesc, bodyDesc, attireDesc, avatarPhotoUri,
+      };
+      await AsyncStorage.setItem(`persona_edit_${persona.id}`, JSON.stringify(data));
+      Alert.alert('Saved', `${name} character update ஆச்சு!`);
+      router.back();
+    } catch {
+      Alert.alert('Error', 'Save பண்ண முடியல, retry பண்ணுங்க');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const pickAvatar = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { Alert.alert('Permission', 'Gallery permission வேணும்'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.85, allowsEditing: true, aspect: [1, 1],
+      base64: true,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      if (asset.base64) {
+        setUploadingAvatar(true);
+        try {
+          const mime = asset.mimeType || 'image/jpeg';
+          const folder = 'my-girls/avatars';
+          const cloudUrl = await uploadToCloudinary(asset.base64, mime, folder);
+          setAvatarPhotoUri(cloudUrl);
+        } catch {
+          Alert.alert('Upload failed', 'Cloud upload தோல்வி — ☁️ Cloud URL option use பண்ணுங்க');
+        } finally {
+          setUploadingAvatar(false);
+        }
+      } else {
+        setAvatarPhotoUri(asset.uri);
+      }
+    }
+  };
+
+  const applyCloudUrl = () => {
+    const url = cloudUrlInput.trim();
+    if (!url) { Alert.alert('URL Enter பண்ணுங்க'); return; }
+    setAvatarPhotoUri(url);
+    setCloudUrlInput('');
+    setShowCloudUrl(false);
+  };
+
+  const Field = ({ label, hint, value, onChange, minH = 60 }: {
+    label: string; hint?: string; value: string;
+    onChange: (v: string) => void; minH?: number;
+  }) => (
+    <View style={styles.fieldWrap}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        style={[styles.fieldInput, { minHeight: minH }]}
+        value={value}
+        onChangeText={onChange}
+        multiline
+        textAlignVertical="top"
+        placeholderTextColor="#bbb"
+      />
+      {hint ? <Text style={styles.fieldHint}>{hint}</Text> : null}
+    </View>
+  );
+
+  if (!persona) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator color="#075E54" />
+      </View>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
+      <Stack.Screen options={{
+        title: 'Edit Character',
+        headerStyle: { backgroundColor: '#075E54' },
+        headerTintColor: '#fff',
+        headerTitleStyle: { fontWeight: 'bold' },
+        headerRight: () => (
+          <TouchableOpacity onPress={handleSave} disabled={saving} style={{ marginRight: 16 }}>
+            {saving
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Save</Text>
+            }
+          </TouchableOpacity>
+        ),
+      }} />
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+
+        <View style={styles.avatarSection}>
+          <TouchableOpacity onPress={pickAvatar} style={styles.avatarWrap}>
+            {avatarPhotoUri
+              ? <Image source={{ uri: avatarPhotoUri }} style={styles.avatarImg} />
+              : <View style={[styles.avatarCircle, { backgroundColor: persona.avatarColor }]}>
+                  <Text style={styles.avatarEmoji}>{avatarLetter || persona.emoji}</Text>
+                </View>
+            }
+            <View style={styles.cameraOverlay}>
+              <Text style={styles.cameraIcon}>📷</Text>
+            </View>
+          </TouchableOpacity>
+          <View style={styles.avatarBtns}>
+            <TouchableOpacity style={[styles.uploadBtn, uploadingAvatar && { opacity: 0.6 }]} onPress={pickAvatar} disabled={uploadingAvatar}>
+              {uploadingAvatar
+                ? <><ActivityIndicator color="#fff" size="small" /><Text style={[styles.uploadBtnText, { marginLeft: 6 }]}>Uploading...</Text></>
+                : <Text style={styles.uploadBtnText}>📱 Phone</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.uploadBtn, { backgroundColor: '#1565C0' }]} onPress={() => { setCloudUrlInput(avatarPhotoUri ?? ''); setShowCloudUrl(true); }}>
+              <Text style={styles.uploadBtnText}>☁️ Cloud URL</Text>
+            </TouchableOpacity>
+            {avatarPhotoUri && (
+              <TouchableOpacity style={[styles.uploadBtn, { backgroundColor: '#B71C1C' }]} onPress={() => setAvatarPhotoUri(undefined)}>
+                <Text style={styles.uploadBtnText}>🗑️ Remove</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* Cloud URL modal */}
+        <Modal visible={showCloudUrl} transparent animationType="fade">
+          <View style={styles.cloudOverlay}>
+            <View style={styles.cloudModal}>
+              <Text style={styles.cloudTitle}>☁️ Cloud Image URL</Text>
+              <Text style={styles.cloudSub}>Cloudinary-ல் இருந்து photo URL paste பண்ணுங்க</Text>
+              <TextInput
+                style={styles.cloudInput}
+                value={cloudUrlInput}
+                onChangeText={setCloudUrlInput}
+                placeholder="https://res.cloudinary.com/..."
+                placeholderTextColor="#aaa"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <View style={styles.cloudBtns}>
+                <TouchableOpacity style={styles.cloudCancel} onPress={() => setShowCloudUrl(false)}>
+                  <Text style={{ color: '#555', fontWeight: '600' }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.cloudApply} onPress={applyCloudUrl}>
+                  <Text style={{ color: '#fff', fontWeight: '600' }}>Apply</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionLabel}>NAME</Text>
+          <TextInput
+            style={styles.nameInput}
+            value={name}
+            onChangeText={setName}
+            placeholder="Character பேரு..."
+            placeholderTextColor="#bbb"
+          />
+          <Text style={[styles.sectionLabel, { marginTop: 14 }]}>AVATAR LETTER</Text>
+          <TextInput
+            style={styles.nameInput}
+            value={avatarLetter}
+            onChangeText={setAvatarLetter}
+            placeholder="ஒரு எழுத்து (e.g. க, ப, த)"
+            placeholderTextColor="#bbb"
+            maxLength={2}
+          />
+          <Text style={[styles.sectionLabel, { marginTop: 14 }]}>GREETING (FIRST MESSAGE)</Text>
+          <TextInput
+            style={[styles.fieldInput, { minHeight: 80 }]}
+            value={greeting}
+            onChangeText={setGreeting}
+            multiline
+            textAlignVertical="top"
+            placeholder="Character-ஓட first message..."
+            placeholderTextColor="#bbb"
+          />
+        </View>
+
+        {/* ── Mood Switch ── */}
+        <View style={styles.card}>
+          <Text style={styles.sectionLabel}>MOOD / BEHAVIOUR</Text>
+          <View style={styles.moodRow}>
+            <View style={styles.moodInfo}>
+              <Text style={styles.moodTitle}>
+                {normalMode ? '😇 Normal Mode' : '😈 Presana Mode'}
+              </Text>
+              <Text style={styles.moodSub}>
+                {normalMode
+                  ? 'Friendly-ஆ, clean-ஆ, professional-ஆ பேசுவாங்க'
+                  : 'Flirty, romantic, playful-ஆ பேசுவாங்க (default)'}
+              </Text>
+            </View>
+            <Switch
+              value={normalMode}
+              onValueChange={toggleNormalMode}
+              trackColor={{ false: '#E91E63', true: '#075E54' }}
+              thumbColor="#fff"
+            />
+          </View>
+          <View style={styles.moodBadgeRow}>
+            <TouchableOpacity
+              style={[styles.moodBadge, !normalMode && styles.moodBadgeActive]}
+              onPress={() => toggleNormalMode(false)}
+            >
+              <Text style={[styles.moodBadgeTxt, !normalMode && { color: '#fff' }]}>😈 Presana</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.moodBadge, normalMode && { backgroundColor: '#075E54', borderColor: '#075E54' }]}
+              onPress={() => toggleNormalMode(true)}
+            >
+              <Text style={[styles.moodBadgeTxt, normalMode && { color: '#fff' }]}>😇 Normal</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionLabel}>SYSTEM PROMPT (CHARACTER BEHAVIOR)</Text>
+          <Text style={{ color: '#888', fontSize: 11, marginBottom: 6 }}>
+            ✏️ Long-press → Cut / Copy / Paste / Select All work ஆகும்
+          </Text>
+          <TextInput
+            style={[styles.fieldInput, { minHeight: 200 }]}
+            value={systemPrompt}
+            onChangeText={setSystemPrompt}
+            multiline
+            textAlignVertical="top"
+            editable={true}
+            selectTextOnFocus={false}
+            contextMenuHidden={false}
+            scrollEnabled={true}
+            autoCorrect={false}
+            autoCapitalize="none"
+            spellCheck={false}
+            placeholder="Character behavior prompt..."
+            placeholderTextColor="#bbb"
+          />
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionLabel}>IMAGE GENERATION DETAILS</Text>
+          <Field label="A. முக அமைப்பு (FACE)" value={faceDesc} onChange={setFaceDesc} hint="e.g. beautiful Tamil woman, 24 years old, long wavy black hair..." minH={80} />
+          <View style={styles.divider} />
+          <Field label="B. உடல் அமைப்பு (BODY)" value={bodyDesc} onChange={setBodyDesc} hint="e.g. slim curvy figure, natural proportioned..." minH={60} />
+          <View style={styles.divider} />
+          <Field label="C. உடை (ATTIRE)" value={attireDesc} onChange={setAttireDesc} hint="e.g. casual salwar or jeans and top..." minH={80} />
+        </View>
+
+        <Text style={styles.footerNote}>
+          This is a built-in character. Your edits are saved locally.
+        </Text>
+
+        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
+          {saving
+            ? <ActivityIndicator color="#fff" />
+            : <Text style={styles.saveBtnText}>Save Character</Text>
+          }
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#f0f2f5' },
+  scroll: { flex: 1 },
+  content: { padding: 12, paddingBottom: 50 },
+  avatarSection: { alignItems: 'center', paddingVertical: 20 },
+  avatarWrap: { position: 'relative', marginBottom: 12 },
+  avatarCircle: { width: 100, height: 100, borderRadius: 50, justifyContent: 'center', alignItems: 'center' },
+  avatarImg: { width: 100, height: 100, borderRadius: 50 },
+  avatarEmoji: { color: '#fff', fontSize: 36, fontWeight: 'bold' },
+  cameraOverlay: {
+    position: 'absolute', bottom: 2, right: 2,
+    backgroundColor: '#333', borderRadius: 14,
+    width: 28, height: 28, justifyContent: 'center', alignItems: 'center',
+  },
+  cameraIcon: { fontSize: 14 },
+  avatarBtns: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' },
+  uploadBtn: { backgroundColor: '#075E54', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  uploadBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  cloudOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  cloudModal: { backgroundColor: '#fff', borderRadius: 16, padding: 20, width: '100%' },
+  cloudTitle: { fontSize: 17, fontWeight: 'bold', color: '#1565C0', marginBottom: 6 },
+  cloudSub: { fontSize: 12, color: '#888', marginBottom: 14 },
+  cloudInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 10, fontSize: 13, color: '#222', backgroundColor: '#f8f9fa', marginBottom: 16 },
+  cloudBtns: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
+  cloudCancel: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, backgroundColor: '#f0f0f0' },
+  cloudApply: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, backgroundColor: '#1565C0' },
+  card: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 14, elevation: 2 },
+  sectionLabel: { fontSize: 10, fontWeight: '700', color: '#888', letterSpacing: 0.8, marginBottom: 8 },
+  nameInput: { backgroundColor: '#f8f9fa', borderRadius: 8, borderWidth: 1, borderColor: '#e0e0e0', padding: 10, fontSize: 15, color: '#111' },
+  fieldWrap: { marginBottom: 4 },
+  fieldLabel: { fontSize: 11, fontWeight: '700', color: '#555', marginBottom: 6, marginTop: 4 },
+  fieldInput: { backgroundColor: '#f8f9fa', borderRadius: 8, borderWidth: 1, borderColor: '#e0e0e0', padding: 10, fontSize: 14, color: '#222', lineHeight: 20 },
+  fieldHint: { fontSize: 11, color: '#aaa', marginTop: 4, marginBottom: 4, lineHeight: 16 },
+  divider: { height: 1, backgroundColor: '#f0f0f0', marginVertical: 14 },
+  footerNote: { fontSize: 12, color: '#888', textAlign: 'center', paddingHorizontal: 20, marginBottom: 16, lineHeight: 18 },
+  saveBtn: { backgroundColor: '#075E54', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
+  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+
+  moodRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  moodInfo: { flex: 1, marginRight: 12 },
+  moodTitle: { fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 3 },
+  moodSub: { fontSize: 12, color: '#888', lineHeight: 17 },
+  moodBadgeRow: { flexDirection: 'row', gap: 10 },
+  moodBadge: { flex: 1, paddingVertical: 10, borderRadius: 20, borderWidth: 1.5, borderColor: '#ddd', alignItems: 'center' },
+  moodBadgeActive: { backgroundColor: '#E91E63', borderColor: '#E91E63' },
+  moodBadgeTxt: { fontSize: 14, fontWeight: '700', color: '#555' },
+});

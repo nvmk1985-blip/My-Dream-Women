@@ -1,0 +1,25 @@
+uploads = []
+
+[[generated]]
+id = "IWvISIreD0-Iyyh0vrTZV"
+uri = "file://artifacts/tamil-ai-chat/assets/images/icon.png"
+type = "image"
+title = "tamil-ai-chat-icon"
+
+[[generated]]
+id = "w2IQpl9My93rTPNGDvE9N"
+uri = "file://artifacts/tamil-ai-chat/assets/images/splash.png"
+type = "image"
+title = "tamil-ai-chat-splash"
+
+[[outputs]]
+id = "I9Y4EFAcd7Iv6mIJve90W"
+uri = "file://replit-my girles.tar.gz"
+type = "unspecified"
+title = "replit-my girles.tar.gz"
+
+[[outputs]]
+id = "1U9TWxYgmoxbxeD7V0T2o"
+uri = "file://replit-my girles.zip"
+type = "unspecified"
+title = "replit-my girles.zip"

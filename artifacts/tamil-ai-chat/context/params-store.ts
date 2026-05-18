@@ -1,0 +1,29 @@
+interface ChatParams {
+  personaId: string;
+  provider: string;
+  providerLabel: string;
+}
+
+let _chatParams: ChatParams | null = null;
+let _groupPersonaIds: string[] = [];
+let _editPersonaId: string | null = null;
+let _offlineChatPersonaId: string | null = null;
+let _pendingPhotoStyle: string = '';
+
+export const ParamsStore = {
+  setChatParams: (p: ChatParams) => { _chatParams = p; },
+  getChatParams: () => _chatParams,
+
+  setGroupPersonaIds: (ids: string[]) => { _groupPersonaIds = ids; },
+  getGroupPersonaIds: () => _groupPersonaIds,
+
+  setEditPersonaId: (id: string) => { _editPersonaId = id; },
+  getEditPersonaId: () => _editPersonaId,
+
+  setOfflineChatPersonaId: (id: string | null) => { _offlineChatPersonaId = id; },
+  getOfflineChatPersonaId: () => _offlineChatPersonaId,
+
+  setPendingPhotoStyle: (style: string) => { _pendingPhotoStyle = style; },
+  getPendingPhotoStyle: () => _pendingPhotoStyle,
+  clearPendingPhotoStyle: () => { _pendingPhotoStyle = ''; },
+};
