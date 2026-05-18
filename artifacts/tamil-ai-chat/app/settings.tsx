@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Linking, ActivityIndicator, Alert,
+  ScrollView, Linking, ActivityIndicator, Alert, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import { uploadUriToCloudinary } from '../services/api';
 
 const APP_VERSION = '1.2.0 (Build 61)';
 const LATEST_APK_URL = 'https://expo.dev/artifacts/eas/kSXWfdv4e7iY3GTwRvBCPY.apk';
@@ -14,6 +16,38 @@ export default function SettingsScreen() {
   const router = useRouter();
   const [checking, setChecking] = useState(false);
   const [checkMsg, setCheckMsg] = useState('');
+  const [appIconUri, setAppIconUri] = useState<string | null>(null);
+  const [uploadingAppIcon, setUploadingAppIcon] = useState(false);
+
+  const pickAndUploadAppIcon = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission வேணும்', 'Gallery access allow பண்ணுங்க');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.9,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    setAppIconUri(asset.uri);
+    setUploadingAppIcon(true);
+    try {
+      await uploadUriToCloudinary(asset.uri, 'image/jpeg', 'my-girls/app-icon');
+      Alert.alert(
+        '✅ Icon Upload ஆச்சு!',
+        'Cloudinary-ல் my-girls/app-icon/ folder-ல் save ஆனது.\n\nGitHub Actions-ல் APK Build trigger பண்ணினா புது icon-ஓட APK கிடைக்கும்! 🎉',
+      );
+    } catch (e: any) {
+      setAppIconUri(null);
+      Alert.alert('Upload பிழை', e?.message || 'மீண்டும் try பண்ணுங்க');
+    } finally {
+      setUploadingAppIcon(false);
+    }
+  };
 
   const checkUpdate = async () => {
     setChecking(true);
@@ -93,6 +127,44 @@ export default function SettingsScreen() {
           ))}
         </View>
 
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <Text style={s.cardIcon}>🎯</Text>
+            <Text style={s.cardTitle}>App Icon மாத்து</Text>
+          </View>
+          <Text style={s.cardDesc}>
+            உங்கள் photo-வை app icon ஆக set பண்ணலாம். Upload ஆனதும் APK build trigger பண்ணினா புது icon-ஓட app கிடைக்கும்.
+          </Text>
+
+          {appIconUri ? (
+            <View style={s.iconPreviewRow}>
+              <Image source={{ uri: appIconUri }} style={s.iconPreview} />
+              <View style={s.iconPreviewInfo}>
+                <Text style={s.iconPreviewTitle}>✅ Upload ஆச்சு!</Text>
+                <Text style={s.iconPreviewHint}>APK build trigger பண்ணு</Text>
+              </View>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={[s.iconBtn, uploadingAppIcon && { opacity: 0.6 }]}
+            onPress={pickAndUploadAppIcon}
+            disabled={uploadingAppIcon}
+          >
+            {uploadingAppIcon
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={s.iconBtnTxt}>🖼️ {appIconUri ? 'வேற Icon Upload பண்ணு' : 'Gallery-ல் இருந்து Icon Select பண்ணு'}</Text>
+            }
+          </TouchableOpacity>
+
+          <View style={s.iconSteps}>
+            <Text style={s.iconStep}>1️⃣ Gallery open → photo select → 1:1 square crop</Text>
+            <Text style={s.iconStep}>2️⃣ Cloudinary-ல் my-girls/app-icon/ save ஆகும்</Text>
+            <Text style={s.iconStep}>3️⃣ GitHub Actions APK Build trigger பண்ணு</Text>
+            <Text style={s.iconStep}>4️⃣ புது icon-ஓட APK ready! 🎉</Text>
+          </View>
+        </View>
+
         <TouchableOpacity style={s.keysBtn} onPress={() => router.push('/keys')}>
           <Text style={s.keysBtnTxt}>🔑 Keys & Accounts</Text>
         </TouchableOpacity>
@@ -156,6 +228,25 @@ const s = StyleSheet.create({
   tipsCard: { backgroundColor: '#0d2137', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#1565C0' },
   tipsTitle: { color: '#58a6ff', fontSize: 14, fontWeight: '700', marginBottom: 10 },
   tip: { color: '#8b949e', fontSize: 12, lineHeight: 22 },
+  iconBtn: {
+    backgroundColor: '#7C3AED', borderRadius: 12,
+    paddingVertical: 14, alignItems: 'center', marginBottom: 12,
+  },
+  iconBtnTxt: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  iconPreviewRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: '#0d2137', borderRadius: 12, padding: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: '#00C853',
+  },
+  iconPreview: { width: 64, height: 64, borderRadius: 14, backgroundColor: '#2a2a4a' },
+  iconPreviewInfo: { flex: 1 },
+  iconPreviewTitle: { color: '#00C853', fontWeight: 'bold', fontSize: 14 },
+  iconPreviewHint: { color: '#aaa', fontSize: 12, marginTop: 4 },
+  iconSteps: {
+    backgroundColor: '#0d1117', borderRadius: 10, padding: 12,
+    borderWidth: 1, borderColor: '#30363d', gap: 6,
+  },
+  iconStep: { color: '#8b949e', fontSize: 12, lineHeight: 20 },
   bottomBar: {
     flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#30363d',
     backgroundColor: '#161b22', paddingVertical: 10,
