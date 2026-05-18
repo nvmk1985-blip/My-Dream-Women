@@ -320,6 +320,68 @@ export default function CloudStorageScreen() {
           />
         }
       >
+        {/* ☁️ Cloud Secrets Card */}
+        <View style={styles.secretsCard}>
+          <View style={styles.secretsCardHeader}>
+            <Text style={styles.secretsCardTitle}>
+              {secretsSaved ? '🔐' : '🔓'} Cloud Secrets
+            </Text>
+            <TouchableOpacity style={styles.secretsEditBtn} onPress={() => setSecretsModal(true)}>
+              <Text style={styles.secretsEditTxt}>{secretsSaved ? 'Edit' : '+ Add'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {secretsSaved ? (
+            <View style={styles.secretsChips}>
+              {/* Cloud Name chip */}
+              <TouchableOpacity
+                style={styles.secretChip}
+                onPress={async () => { await Clipboard.setStringAsync(cloudName); Alert.alert('📋', 'Cloud Name copied!'); }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.secretChipIcon}>☁️</Text>
+                <View style={styles.secretChipInfo}>
+                  <Text style={styles.secretChipLabel}>CLOUD NAME</Text>
+                  <Text style={styles.secretChipValue}>{cloudName}</Text>
+                </View>
+                <Text style={styles.secretChipCopy}>📋</Text>
+              </TouchableOpacity>
+
+              {/* API Key chip */}
+              <TouchableOpacity
+                style={styles.secretChip}
+                onPress={async () => { await Clipboard.setStringAsync(cloudApiKey); Alert.alert('📋', 'API Key copied!'); }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.secretChipIcon}>🔑</Text>
+                <View style={styles.secretChipInfo}>
+                  <Text style={styles.secretChipLabel}>API KEY</Text>
+                  <Text style={styles.secretChipValue}>{cloudApiKey.slice(0, 6)}{'●'.repeat(Math.max(0, cloudApiKey.length - 6))}</Text>
+                </View>
+                <Text style={styles.secretChipCopy}>📋</Text>
+              </TouchableOpacity>
+
+              {/* API Secret chip */}
+              <TouchableOpacity
+                style={styles.secretChip}
+                onPress={async () => { await Clipboard.setStringAsync(cloudApiSecret); Alert.alert('📋', 'API Secret copied!'); }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.secretChipIcon}>🔒</Text>
+                <View style={styles.secretChipInfo}>
+                  <Text style={styles.secretChipLabel}>API SECRET</Text>
+                  <Text style={styles.secretChipValue}>{'●'.repeat(Math.min(cloudApiSecret.length, 20))}</Text>
+                </View>
+                <Text style={styles.secretChipCopy}>📋</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.secretsEmptyBtn} onPress={() => setSecretsModal(true)}>
+              <Text style={styles.secretsEmptyTxt}>🔓 Tap to add Cloudinary credentials</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
         <Text style={styles.sectionLabel}>STORAGE</Text>
 
         <ScrollView
@@ -760,6 +822,46 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   secretBtnTxt: { fontSize: 20 },
+
+  secretsCard: {
+    marginHorizontal: 14, marginTop: 14, marginBottom: 4,
+    backgroundColor: '#0d1b2a', borderRadius: 16,
+    borderWidth: 1.5, borderColor: '#1e3a5f',
+    overflow: 'hidden',
+  },
+  secretsCardHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: '#1e3a5f',
+  },
+  secretsCardTitle: { color: '#e2e8f0', fontSize: 15, fontWeight: '700' },
+  secretsEditBtn: {
+    backgroundColor: '#1e3a5f', borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 5,
+  },
+  secretsEditTxt: { color: '#60a5fa', fontSize: 12, fontWeight: '700' },
+  secretsChips: { paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
+  secretChip: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#111e2e', borderRadius: 12,
+    borderWidth: 1, borderColor: '#1e3a5f',
+    paddingHorizontal: 14, paddingVertical: 11,
+    marginBottom: 6,
+  },
+  secretChipIcon: { fontSize: 18, marginRight: 12 },
+  secretChipInfo: { flex: 1 },
+  secretChipLabel: {
+    color: '#64748b', fontSize: 10, fontWeight: '800',
+    letterSpacing: 1, marginBottom: 3,
+  },
+  secretChipValue: { color: '#94a3b8', fontSize: 13, fontFamily: 'monospace' },
+  secretChipCopy: { fontSize: 18, marginLeft: 8 },
+  secretsEmptyBtn: {
+    margin: 12, backgroundColor: '#111e2e', borderRadius: 12,
+    paddingVertical: 16, alignItems: 'center',
+    borderWidth: 1, borderColor: '#1e3a5f', borderStyle: 'dashed',
+  },
+  secretsEmptyTxt: { color: '#64748b', fontSize: 13 },
 
   secOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.85)',
