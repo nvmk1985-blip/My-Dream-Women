@@ -81,6 +81,14 @@ jobs:
           echo "=== Android project generated ==="
           ls android/
 
+      - name: Enable JS bundle in debug APK
+        working-directory: artifacts/tamil-ai-chat/android
+        run: |
+          echo "" >> gradle.properties
+          echo "# Bundle JS into debug APK so it works standalone" >> gradle.properties
+          echo "bundleInDebug=true" >> gradle.properties
+          echo "✅ bundleInDebug=true added to gradle.properties"
+
       - name: Build APK with Gradle
         working-directory: artifacts/tamil-ai-chat/android
         run: |
@@ -108,7 +116,6 @@ jobs:
           echo "SIZE: $SIZE bytes"
           if [ -z "$APK" ] || [ "$SIZE" -lt 1000000 ]; then
             echo "❌ APK too small or not found (size: $SIZE bytes)"
-            echo "=== Last 100 lines of Gradle log ==="
             tail -100 /tmp/gradle.log
             exit 1
           fi
@@ -116,7 +123,7 @@ jobs:
           APK_NAME="my-girls-v${{ github.run_number }}.apk"
           cp "$APK" "$APK_NAME"
           echo "APK_NAME=$APK_NAME" >> $GITHUB_ENV
-          echo "APK copied to: $APK_NAME ($(stat -c%s "$APK_NAME") bytes)"
+          echo "Copied to: $APK_NAME ($(stat -c%s "$APK_NAME") bytes)"
 
       - name: Publish APK via GitHub Release
         env:
