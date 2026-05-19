@@ -66,7 +66,7 @@ jobs:
             echo "Using default icon"
           fi
 
-      - name: Expo Prebuild (generate Android project)
+      - name: Expo Prebuild
         working-directory: artifacts/tamil-ai-chat
         env:
           EXPO_PUBLIC_API_URL: https://my-girls-1-5.onrender.com
@@ -75,78 +75,52 @@ jobs:
         run: |
           yes | npx expo prebuild --platform android --clean 2>&1 || true
           if [ ! -d android ]; then
-            echo "❌ android/ directory not created — prebuild failed"
+            echo "❌ android/ not created"
             exit 1
           fi
-          echo "=== Android project generated ==="
           ls android/
 
-      - name: Generate release keystore
-        run: |
-          keytool -genkeypair -v \
-            -keystore /tmp/my-girls-release.keystore \
-            -alias my-girls \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass mygirls123 \
-            -keypass mygirls123 \
-            -dname "CN=MyGirls, OU=App, O=MyGirls, L=Chennai, ST=TN, C=IN"
-          echo "✅ Keystore generated"
-
-      - name: Configure release signing in Gradle
+      - name: Generate keystore and configure signing
         working-directory: artifacts/tamil-ai-chat/android
         run: |
-          # Add signing config to gradle.properties
-          cat >> gradle.properties << 'EOF'
+          # Generate keystore inside android/app/
+          keytool -genkeypair -v \
+            -keystore app/release.keystore \
+            -alias my-girls \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass mygirls123 -keypass mygirls123 \
+            -dname "CN=MyGirls,OU=App,O=MyGirls,L=Chennai,ST=TN,C=IN"
+          echo "✅ Keystore created"
 
-          MYAPP_UPLOAD_STORE_FILE=/tmp/my-girls-release.keystore
+          # Add signing properties to gradle.properties
+          cat >> gradle.properties << 'EOF'
+          MYAPP_UPLOAD_STORE_FILE=release.keystore
           MYAPP_UPLOAD_KEY_ALIAS=my-girls
           MYAPP_UPLOAD_STORE_PASSWORD=mygirls123
           MYAPP_UPLOAD_KEY_PASSWORD=mygirls123
           EOF
+          echo "✅ gradle.properties updated"
 
-          # Patch app/build.gradle to add signingConfigs
-          node -e "
-            const fs = require('fs');
-            let g = fs.readFileSync('app/build.gradle', 'utf8');
+          # Show what the build.gradle signingConfigs looks like (for debugging)
+          grep -A 20 "signingConfigs" app/build.gradle || echo "(no signingConfigs block found)"
 
-            // Add signingConfigs block after 'android {'
-            if (!g.includes('signingConfigs')) {
-              g = g.replace(
-                'android {',
-                \`android {
-              signingConfigs {
-                  release {
-                      storeFile file(MYAPP_UPLOAD_STORE_FILE)
-                      storePassword MYAPP_UPLOAD_STORE_PASSWORD
-                      keyAlias MYAPP_UPLOAD_KEY_ALIAS
-                      keyPassword MYAPP_UPLOAD_KEY_PASSWORD
-                  }
-              }\`
-              );
-              // Set release build to use signingConfigs.release
-              g = g.replace(
-                /buildTypes \{[\s\S]*?release \{/,
-                (m) => m + '\n                signingConfig signingConfigs.release'
-              );
-              fs.writeFileSync('app/build.gradle', g);
-              console.log('✅ Signing config added to app/build.gradle');
-            } else {
-              console.log('Signing config already present');
-            }
-          "
-
-      - name: Build Release APK with Gradle
+      - name: Build Release APK
         working-directory: artifacts/tamil-ai-chat/android
         run: |
-          set -o pipefail
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon 2>&1 | tee /tmp/gradle.log
-          echo "=== APK files found ==="
-          find . -name "*.apk" | grep -v "node_modules\|\.git" | while read f; do
-            sz=$(stat -c%s "$f" 2>/dev/null || echo 0)
-            echo "$sz bytes — $f"
+          ./gradlew assembleRelease --no-daemon \
+            -PMYAPP_UPLOAD_STORE_FILE=release.keystore \
+            -PMYAPP_UPLOAD_KEY_ALIAS=my-girls \
+            -PMYAPP_UPLOAD_STORE_PASSWORD=mygirls123 \
+            -PMYAPP_UPLOAD_KEY_PASSWORD=mygirls123 \
+            2>&1 | tee /tmp/gradle.log || {
+            echo "=== GRADLE FAILED - Last 80 lines ==="
+            tail -80 /tmp/gradle.log
+            exit 1
+          }
+          echo "=== APK files ==="
+          find . -name "*.apk" | grep -v node_modules | while read f; do
+            echo "$(stat -c%s "$f") bytes — $f"
           done | sort -rn
 
       - name: Locate, validate and copy APK
@@ -155,43 +129,38 @@ jobs:
             -name "*.apk" 2>/dev/null | head -1)
           if [ -z "$APK" ]; then
             APK=$(find artifacts/tamil-ai-chat/android -name "*.apk" 2>/dev/null \
-              | grep -v "node_modules\|\.git" \
+              | grep -v node_modules \
               | while read f; do echo "$(stat -c%s "$f" 2>/dev/null||echo 0) $f"; done \
               | sort -rn | awk 'NR==1{print $2}')
           fi
-          echo "APK found: $APK"
           SIZE=$(stat -c%s "$APK" 2>/dev/null || echo 0)
-          echo "SIZE: $SIZE bytes"
+          echo "APK: $APK ($SIZE bytes)"
           if [ -z "$APK" ] || [ "$SIZE" -lt 1000000 ]; then
-            echo "❌ APK too small or not found (size: $SIZE bytes)"
-            tail -100 /tmp/gradle.log
+            echo "❌ APK too small — tail of gradle.log:"
+            tail -80 /tmp/gradle.log
             exit 1
           fi
-          echo "✅ APK ready: $(ls -lh "$APK")"
           APK_NAME="my-girls-v${{ github.run_number }}.apk"
           cp "$APK" "$APK_NAME"
           echo "APK_NAME=$APK_NAME" >> $GITHUB_ENV
+          echo "✅ $(ls -lh "$APK_NAME")"
 
       - name: Publish APK via GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="v${{ github.run_number }}"
-          echo "Publishing $APK_NAME as release $TAG"
-          ls -lh "$APK_NAME"
           gh release create "$TAG" "$APK_NAME" \
             --title "My Girls — Build ${{ github.run_number }}" \
-            --notes "Direct install APK (Release build). Build ${{ github.run_number }}." \
+            --notes "Release APK. Build ${{ github.run_number }}." \
             --latest \
             --repo ${{ github.repository }}
-          echo "✅ DOWNLOAD: https://github.com/${{ github.repository }}/releases/download/$TAG/$APK_NAME"
+          echo "✅ https://github.com/${{ github.repository }}/releases/download/$TAG/$APK_NAME"
 
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: build-log
-          path: |
-            /tmp/gradle.log
-            artifacts/tamil-ai-chat/android/app/build/outputs/logs/
+          path: /tmp/gradle.log
           retention-days: 7
