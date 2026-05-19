@@ -80,58 +80,42 @@ jobs:
           fi
           ls android/
 
-      - name: Pre-bundle JavaScript into Android assets
+      - name: Bundle JS with expo export:embed
         working-directory: artifacts/tamil-ai-chat
         env:
           EXPO_PUBLIC_API_URL: https://my-girls-1-5.onrender.com
-          NODE_ENV: production
           EXPO_NO_TELEMETRY: 1
+          NODE_ENV: production
         run: |
           mkdir -p android/app/src/main/assets
           mkdir -p android/app/src/main/res
-          echo "=== Bundling JavaScript (entry: expo-router/entry) ==="
-          npx react-native bundle \
+
+          echo "=== Bundling with expo export:embed ==="
+          npx expo export:embed \
             --platform android \
-            --dev false \
-            --entry-file node_modules/expo-router/entry.js \
             --bundle-output android/app/src/main/assets/index.android.bundle \
             --assets-dest android/app/src/main/res \
-            2>&1 || \
-          npx react-native bundle \
-            --platform android \
             --dev false \
-            --entry-file node_modules/expo-router/src/entry.js \
-            --bundle-output android/app/src/main/assets/index.android.bundle \
-            --assets-dest android/app/src/main/res \
             2>&1
-          if [ -f android/app/src/main/assets/index.android.bundle ]; then
-            ls -lh android/app/src/main/assets/
-            echo "✅ JS bundle created"
+
+          BUNDLE=android/app/src/main/assets/index.android.bundle
+          if [ -f "$BUNDLE" ]; then
+            echo "✅ Bundle size: $(stat -c%s "$BUNDLE") bytes"
           else
-            echo "❌ Bundle not created — trying expo export approach"
-            npx expo export --platform android --output-dir /tmp/expo-export 2>&1 || true
-            ls /tmp/expo-export/ 2>/dev/null || true
-            # Copy bundle if found
-            BUNDLE=$(find /tmp/expo-export -name "*.bundle" 2>/dev/null | head -1)
-            if [ -n "$BUNDLE" ]; then
-              cp "$BUNDLE" android/app/src/main/assets/index.android.bundle
-              echo "✅ Bundle from expo export: $BUNDLE"
-            else
-              echo "❌ Could not create bundle"
-              exit 1
-            fi
+            echo "❌ Bundle not created"
+            exit 1
           fi
 
-      - name: Build APK with Gradle
+      - name: Build APK (skip JS bundling — already done)
         working-directory: artifacts/tamil-ai-chat/android
         run: |
           chmod +x gradlew
-          # Tell Gradle NOT to run bundling again (we pre-bundled)
+          # REACT_NATIVE_BUNDLE_SKIP skips Gradle's own bundling step
           ./gradlew assembleDebug \
-            -PbundleInDebug=false \
+            -PbundleInDebug=true \
             --no-daemon \
             2>&1 | tee /tmp/gradle.log
-          echo "=== APK files found ==="
+          echo "=== APK files ==="
           find . -name "*.apk" | grep -v node_modules | while read f; do
             echo "$(stat -c%s "$f") bytes — $f"
           done | sort -rn
@@ -150,7 +134,7 @@ jobs:
             tail -80 /tmp/gradle.log
             exit 1
           fi
-          echo "✅ APK ready: $(ls -lh "$APK")"
+          echo "✅ $(ls -lh "$APK")"
           APK_NAME="my-girls-v${{ github.run_number }}.apk"
           cp "$APK" "$APK_NAME"
           echo "APK_NAME=$APK_NAME" >> $GITHUB_ENV
@@ -162,7 +146,7 @@ jobs:
           TAG="v${{ github.run_number }}"
           gh release create "$TAG" "$APK_NAME" \
             --title "My Girls — Build ${{ github.run_number }}" \
-            --notes "Standalone APK — works on mobile network. Build ${{ github.run_number }}." \
+            --notes "Standalone APK — mobile network-ல் work ஆகும். Build ${{ github.run_number }}." \
             --latest \
             --repo ${{ github.repository }}
           echo "✅ https://github.com/${{ github.repository }}/releases/download/$TAG/$APK_NAME"
