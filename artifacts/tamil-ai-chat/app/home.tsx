@@ -254,7 +254,7 @@ const s = StyleSheet.create({
   coverImg: { width: '100%', height: COVER_H, position: 'absolute', top: 0, left: 0 },
   coverOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.38)',
+    backgroundColor: 'rgba(0,0,0,0.15)',
   },
   coverBar: {
     position: 'absolute', top: 0, left: 0, right: 0,
