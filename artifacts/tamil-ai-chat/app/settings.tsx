@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   ScrollView, Linking, ActivityIndicator, Alert, Image,
@@ -6,11 +6,17 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { uploadUriToCloudinary } from '../services/api';
 
 const APP_VERSION = '1.2.0 (Build 61)';
 const LATEST_APK_URL = 'https://expo.dev/artifacts/eas/kSXWfdv4e7iY3GTwRvBCPY.apk';
 const API_BASE = '';
+const GITHUB_REPO = 'nnvvmm663-sketch/my-dream-girle';
+const WORKFLOW_FILE = 'build-apk.yml';
+const KEYS_STORAGE = 'api_keys_store';
+
+type BuildStatus = 'idle' | 'triggering' | 'queued' | 'in_progress' | 'success' | 'failure';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -18,7 +24,147 @@ export default function SettingsScreen() {
   const [checkMsg, setCheckMsg] = useState('');
   const [appIconUri, setAppIconUri] = useState<string | null>(null);
   const [uploadingAppIcon, setUploadingAppIcon] = useState(false);
+  const [buildStatus, setBuildStatus] = useState<BuildStatus>('idle');
+  const [buildRunId, setBuildRunId] = useState<number | null>(null);
+  const [buildMsg, setBuildMsg] = useState('');
+  const [apkUrl, setApkUrl] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  useEffect(() => {
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
+
+  // GitHub Token-ஐ Keys screen-ல் இருந்து படிக்கிறோம்
+  const getGithubToken = async (): Promise<string | null> => {
+    try {
+      const saved = await AsyncStorage.getItem(KEYS_STORAGE);
+      if (!saved) return null;
+      const parsed: Record<string, string> = JSON.parse(saved);
+      return parsed['github'] || null;
+    } catch { return null; }
+  };
+
+  // GitHub Actions Build trigger செய்கிறோம்
+  const triggerGithubBuild = async () => {
+    const token = await getGithubToken();
+    if (!token) {
+      Alert.alert(
+        '🔑 GitHub Token தேவை',
+        'Keys & Accounts screen-ல் GitHub Token save பண்ணுங்க, பிறகு trigger ஆகும்.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: '🔑 Keys-க்கு போ', onPress: () => router.push('/keys') },
+        ]
+      );
+      return;
+    }
+
+    setBuildStatus('triggering');
+    setBuildMsg('GitHub-ல் build trigger பண்றோம்...');
+    setApkUrl(null);
+
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `token ${token}`,
+            Accept: 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ref: 'main' }),
+        }
+      );
+
+      if (res.status === 204) {
+        setBuildStatus('queued');
+        setBuildMsg('✅ Build queue-ல் சேர்ந்தது! Status check பண்றோம்...');
+        // 5 seconds wait பிறகு run ID கண்டுபிடிக்கிறோம்
+        setTimeout(() => pollBuildStatus(token), 5000);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Status: ${res.status}`);
+      }
+    } catch (e: any) {
+      setBuildStatus('idle');
+      setBuildMsg('');
+      Alert.alert('Build Trigger பிழை', e?.message || 'மீண்டும் try பண்ணுங்க');
+    }
+  };
+
+  // Build status poll செய்கிறோம்
+  const pollBuildStatus = async (token: string) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+
+    const checkStatus = async () => {
+      try {
+        const res = await fetch(
+          `https://api.github.com/repos/${GITHUB_REPO}/actions/runs?per_page=5`,
+          {
+            headers: {
+              Authorization: `token ${token}`,
+              Accept: 'application/vnd.github.v3+json',
+            },
+          }
+        );
+        const data = await res.json();
+        const runs = data.workflow_runs || [];
+        // Latest run கண்டுபிடிக்கிறோம்
+        const latest = runs.find((r: any) => r.name === 'Build APK' || r.path?.includes(WORKFLOW_FILE));
+        if (!latest) {
+          setBuildMsg('🔍 Build run தேடுகிறோம்...');
+          return;
+        }
+
+        setBuildRunId(latest.id);
+        const status = latest.status;
+        const conclusion = latest.conclusion;
+
+        if (status === 'queued') {
+          setBuildStatus('queued');
+          setBuildMsg('⏳ Build queue-ல் காத்திருக்கிறது...');
+        } else if (status === 'in_progress') {
+          setBuildStatus('in_progress');
+          setBuildMsg('🔨 Build நடக்கிறது... (சுமார் 10-15 நிமிடம்)');
+        } else if (status === 'completed') {
+          if (pollRef.current) clearInterval(pollRef.current);
+          if (conclusion === 'success') {
+            setBuildStatus('success');
+            setBuildMsg('✅ Build success! APK ready ஆச்சு!');
+            // Latest release APK link கண்டுபிடிக்கிறோம்
+            fetchLatestApk(token);
+          } else {
+            setBuildStatus('failure');
+            setBuildMsg(`❌ Build fail ஆச்சு (${conclusion}). Logs பார்க்க GitHub-க்கு போங்க.`);
+          }
+        }
+      } catch {}
+    };
+
+    await checkStatus();
+    pollRef.current = setInterval(checkStatus, 30000); // 30 seconds-க்கு ஒரு முறை check
+  };
+
+  // Latest APK release link கண்டுபிடிக்கிறோம்
+  const fetchLatestApk = async (token: string) => {
+    try {
+      const res = await fetch(
+        `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
+        {
+          headers: {
+            Authorization: `token ${token}`,
+            Accept: 'application/vnd.github.v3+json',
+          },
+        }
+      );
+      const data = await res.json();
+      const apk = data.assets?.find((a: any) => a.name?.endsWith('.apk'));
+      if (apk) setApkUrl(apk.browser_download_url);
+    } catch {}
+  };
+
+  // Icon upload + auto trigger
   const pickAndUploadAppIcon = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
@@ -37,15 +183,20 @@ export default function SettingsScreen() {
     setUploadingAppIcon(true);
     try {
       await uploadUriToCloudinary(asset.uri, 'image/jpeg', 'my-girls/app-icon');
+      setUploadingAppIcon(false);
+      // Auto trigger செய்கிறோம்
       Alert.alert(
         '✅ Icon Upload ஆச்சு!',
-        'Cloudinary-ல் my-girls/app-icon/ folder-ல் save ஆனது.\n\nGitHub Actions-ல் APK Build trigger பண்ணினா புது icon-ஓட APK கிடைக்கும்! 🎉',
+        'Cloudinary-ல் save ஆனது.\n\nGitHub Build இப்போது automatically trigger ஆகுமா?',
+        [
+          { text: 'பிறகு பார்க்கலாம்', style: 'cancel' },
+          { text: '🚀 Build Trigger பண்ணு', onPress: triggerGithubBuild },
+        ]
       );
     } catch (e: any) {
+      setUploadingAppIcon(false);
       setAppIconUri(null);
       Alert.alert('Upload பிழை', e?.message || 'மீண்டும் try பண்ணுங்க');
-    } finally {
-      setUploadingAppIcon(false);
     }
   };
 
@@ -63,6 +214,28 @@ export default function SettingsScreen() {
       setCheckMsg(`v${APP_VERSION} — APK link கீழே download பண்ணலாம்`);
     } finally {
       setChecking(false);
+    }
+  };
+
+  const getBuildStatusColor = () => {
+    switch (buildStatus) {
+      case 'triggering': return '#f59e0b';
+      case 'queued': return '#3b82f6';
+      case 'in_progress': return '#8b5cf6';
+      case 'success': return '#10b981';
+      case 'failure': return '#ef4444';
+      default: return '#6b7280';
+    }
+  };
+
+  const getBuildStatusIcon = () => {
+    switch (buildStatus) {
+      case 'triggering': return '⚡';
+      case 'queued': return '⏳';
+      case 'in_progress': return '🔨';
+      case 'success': return '✅';
+      case 'failure': return '❌';
+      default: return '🚀';
     }
   };
 
@@ -127,13 +300,14 @@ export default function SettingsScreen() {
           ))}
         </View>
 
+        {/* App Icon மாத்து + Auto Build Trigger */}
         <View style={s.card}>
           <View style={s.cardHeader}>
             <Text style={s.cardIcon}>🎯</Text>
             <Text style={s.cardTitle}>App Icon மாத்து</Text>
           </View>
           <Text style={s.cardDesc}>
-            உங்கள் photo-வை app icon ஆக set பண்ணலாம். Upload ஆனதும் APK build trigger பண்ணினா புது icon-ஓட app கிடைக்கும்.
+            உங்கள் photo-வை icon-ஆக upload பண்ணுங்க. Build automatically trigger ஆகும்! GitHub-க்கு போக வேண்டாம்.
           </Text>
 
           {appIconUri ? (
@@ -141,7 +315,7 @@ export default function SettingsScreen() {
               <Image source={{ uri: appIconUri }} style={s.iconPreview} />
               <View style={s.iconPreviewInfo}>
                 <Text style={s.iconPreviewTitle}>✅ Upload ஆச்சு!</Text>
-                <Text style={s.iconPreviewHint}>APK build trigger பண்ணு</Text>
+                <Text style={s.iconPreviewHint}>Build trigger ஆகுது...</Text>
               </View>
             </View>
           ) : null}
@@ -149,19 +323,69 @@ export default function SettingsScreen() {
           <TouchableOpacity
             style={[s.iconBtn, uploadingAppIcon && { opacity: 0.6 }]}
             onPress={pickAndUploadAppIcon}
-            disabled={uploadingAppIcon}
+            disabled={uploadingAppIcon || buildStatus === 'in_progress'}
           >
             {uploadingAppIcon
-              ? <ActivityIndicator color="#fff" size="small" />
+              ? <><ActivityIndicator color="#fff" size="small" /><Text style={s.iconBtnTxt}> Uploading...</Text></>
               : <Text style={s.iconBtnTxt}>🖼️ {appIconUri ? 'வேற Icon Upload பண்ணு' : 'Gallery-ல் இருந்து Icon Select பண்ணு'}</Text>
             }
           </TouchableOpacity>
 
+          {/* Build Status Box */}
+          {buildStatus !== 'idle' && (
+            <View style={[s.buildStatusBox, { borderColor: getBuildStatusColor() }]}>
+              <View style={s.buildStatusHeader}>
+                <Text style={s.buildStatusIcon}>{getBuildStatusIcon()}</Text>
+                <Text style={[s.buildStatusTitle, { color: getBuildStatusColor() }]}>
+                  Build Status
+                </Text>
+                {(buildStatus === 'triggering' || buildStatus === 'queued' || buildStatus === 'in_progress') && (
+                  <ActivityIndicator color={getBuildStatusColor()} size="small" />
+                )}
+              </View>
+              <Text style={s.buildStatusMsg}>{buildMsg}</Text>
+
+              {buildStatus === 'in_progress' && buildRunId && (
+                <TouchableOpacity
+                  style={s.viewLogsBtn}
+                  onPress={() => Linking.openURL(`https://github.com/${GITHUB_REPO}/actions/runs/${buildRunId}`)}
+                >
+                  <Text style={s.viewLogsTxt}>📋 Live Logs பார்க்க</Text>
+                </TouchableOpacity>
+              )}
+
+              {buildStatus === 'success' && apkUrl && (
+                <TouchableOpacity
+                  style={s.downloadApkBtn}
+                  onPress={() => Linking.openURL(apkUrl)}
+                >
+                  <Text style={s.downloadApkTxt}>⬇️ புது APK Download பண்ணு</Text>
+                </TouchableOpacity>
+              )}
+
+              {buildStatus === 'failure' && (
+                <TouchableOpacity
+                  style={s.retryBtn}
+                  onPress={triggerGithubBuild}
+                >
+                  <Text style={s.retryTxt}>🔄 மீண்டும் try பண்ணு</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Manual trigger button - build idle ஆனாலும் use பண்ணலாம் */}
+          {buildStatus === 'idle' && (
+            <TouchableOpacity style={s.manualTriggerBtn} onPress={triggerGithubBuild}>
+              <Text style={s.manualTriggerTxt}>🚀 Build Trigger பண்ணு (icon upload இல்லாமல்)</Text>
+            </TouchableOpacity>
+          )}
+
           <View style={s.iconSteps}>
-            <Text style={s.iconStep}>1️⃣ Gallery open → photo select → 1:1 square crop</Text>
-            <Text style={s.iconStep}>2️⃣ Cloudinary-ல் my-girls/app-icon/ save ஆகும்</Text>
-            <Text style={s.iconStep}>3️⃣ GitHub Actions APK Build trigger பண்ணு</Text>
-            <Text style={s.iconStep}>4️⃣ புது icon-ஓட APK ready! 🎉</Text>
+            <Text style={s.iconStep}>1️⃣ Gallery open → photo select → 1:1 crop</Text>
+            <Text style={s.iconStep}>2️⃣ Cloudinary-ல் auto save ஆகும்</Text>
+            <Text style={s.iconStep}>3️⃣ App-லேயே Build automatically trigger ஆகும் 🆕</Text>
+            <Text style={s.iconStep}>4️⃣ Build ready ஆனதும் Download link கிடைக்கும் 🆕</Text>
           </View>
         </View>
 
@@ -171,12 +395,12 @@ export default function SettingsScreen() {
 
         <View style={s.tipsCard}>
           <Text style={s.tipsTitle}>💡 Tips</Text>
+          <Text style={s.tip}>• GitHub Token Keys screen-ல் save பண்ணினா auto build trigger ஆகும்</Text>
+          <Text style={s.tip}>• Build சுமார் 10-15 நிமிடம் ஆகும், app open வச்சிருங்க</Text>
           <Text style={s.tip}>• முதல் message slow-ஆ வந்தா — server wake up ஆக நேரம் ஆகும்</Text>
-          <Text style={s.tip}>• AI Girls photo generate பண்ண Stable Horde (free) use ஆகும்</Text>
           <Text style={s.tip}>• Cloud-ல் images save ஆக Cloudinary configured ஆகிட்டது</Text>
         </View>
       </ScrollView>
-
     </SafeAreaView>
   );
 }
@@ -199,62 +423,78 @@ const s = StyleSheet.create({
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   cardIcon: { fontSize: 22 },
-  cardTitle: { fontSize: 17, fontWeight: 'bold', color: '#e6edf3' },
-  cardDesc: { fontSize: 13, color: '#8b949e', lineHeight: 20, marginBottom: 14 },
+  cardTitle: { color: '#e6edf3', fontSize: 16, fontWeight: '700' },
+  cardDesc: { color: '#8b949e', fontSize: 13, lineHeight: 20, marginBottom: 14 },
   updateBtn: {
-    backgroundColor: '#7C3AED', borderRadius: 12,
-    paddingVertical: 14, alignItems: 'center', marginBottom: 8,
+    backgroundColor: '#238636', borderRadius: 10,
+    paddingVertical: 12, alignItems: 'center', marginBottom: 10,
   },
-  updateBtnTxt: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
-  checkMsg: { color: '#58a6ff', fontSize: 12, textAlign: 'center', marginBottom: 8 },
+  updateBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  checkMsg: { color: '#8b949e', fontSize: 13, marginBottom: 8 },
   downloadLink: {
-    borderWidth: 1, borderColor: '#7C3AED', borderRadius: 10,
-    paddingVertical: 10, alignItems: 'center',
+    backgroundColor: '#1f6feb', borderRadius: 10,
+    paddingVertical: 11, alignItems: 'center',
   },
-  downloadLinkTxt: { color: '#7C3AED', fontWeight: '600', fontSize: 13 },
+  downloadLinkTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
   infoRow: {
     flexDirection: 'row', justifyContent: 'space-between',
-    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#21262d',
+    paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#21262d',
   },
-  infoLabel: { fontSize: 13, color: '#8b949e' },
-  infoVal: { fontSize: 13, fontWeight: '600', color: '#e6edf3' },
-  keysBtn: {
-    backgroundColor: '#1f2937', borderRadius: 12,
-    paddingVertical: 16, alignItems: 'center', marginBottom: 16,
-    borderWidth: 1, borderColor: '#374151', flexDirection: 'row',
-    justifyContent: 'center', gap: 8,
-  },
-  keysBtnTxt: { color: '#F59E0B', fontSize: 16, fontWeight: 'bold' },
-  tipsCard: { backgroundColor: '#0d2137', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#1565C0' },
-  tipsTitle: { color: '#58a6ff', fontSize: 14, fontWeight: '700', marginBottom: 10 },
-  tip: { color: '#8b949e', fontSize: 12, lineHeight: 22 },
-  iconBtn: {
-    backgroundColor: '#7C3AED', borderRadius: 12,
-    paddingVertical: 14, alignItems: 'center', marginBottom: 12,
-  },
-  iconBtnTxt: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
-  iconPreviewRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: '#0d2137', borderRadius: 12, padding: 12, marginBottom: 12,
-    borderWidth: 1, borderColor: '#00C853',
-  },
-  iconPreview: { width: 64, height: 64, borderRadius: 14, backgroundColor: '#2a2a4a' },
+  infoLabel: { color: '#8b949e', fontSize: 13 },
+  infoVal: { color: '#e6edf3', fontSize: 13, fontWeight: '600' },
+  iconPreviewRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 },
+  iconPreview: { width: 60, height: 60, borderRadius: 14, borderWidth: 2, borderColor: '#388bfd' },
   iconPreviewInfo: { flex: 1 },
-  iconPreviewTitle: { color: '#00C853', fontWeight: 'bold', fontSize: 14 },
-  iconPreviewHint: { color: '#aaa', fontSize: 12, marginTop: 4 },
-  iconSteps: {
-    backgroundColor: '#0d1117', borderRadius: 10, padding: 12,
-    borderWidth: 1, borderColor: '#30363d', gap: 6,
+  iconPreviewTitle: { color: '#3fb950', fontSize: 14, fontWeight: '700' },
+  iconPreviewHint: { color: '#8b949e', fontSize: 12, marginTop: 2 },
+  iconBtn: {
+    backgroundColor: '#6e40c9', borderRadius: 10,
+    paddingVertical: 13, alignItems: 'center',
+    flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 12,
   },
-  iconStep: { color: '#8b949e', fontSize: 12, lineHeight: 20 },
-  bottomBar: {
-    flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#30363d',
-    backgroundColor: '#161b22', paddingVertical: 10,
-    position: 'absolute', bottom: 0, left: 0, right: 0,
+  iconBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  buildStatusBox: {
+    borderRadius: 12, borderWidth: 1.5,
+    padding: 14, marginBottom: 12, backgroundColor: '#0d1117',
   },
-  bottomBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
-  bottomIcon: { fontSize: 20, color: '#8b949e', fontWeight: 'bold' },
-  bottomIconHome: { fontSize: 22 },
-  bottomLabel: { fontSize: 11, color: '#8b949e', marginTop: 2 },
-  bottomLabelActive: { fontSize: 11, color: '#58a6ff', fontWeight: '700', marginTop: 2 },
+  buildStatusHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  buildStatusIcon: { fontSize: 18 },
+  buildStatusTitle: { flex: 1, fontSize: 14, fontWeight: '700' },
+  buildStatusMsg: { color: '#c9d1d9', fontSize: 13, lineHeight: 20 },
+  viewLogsBtn: {
+    backgroundColor: '#21262d', borderRadius: 8,
+    paddingVertical: 9, alignItems: 'center', marginTop: 10,
+    borderWidth: 1, borderColor: '#30363d',
+  },
+  viewLogsTxt: { color: '#8b949e', fontSize: 13, fontWeight: '600' },
+  downloadApkBtn: {
+    backgroundColor: '#238636', borderRadius: 8,
+    paddingVertical: 12, alignItems: 'center', marginTop: 10,
+  },
+  downloadApkTxt: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  retryBtn: {
+    backgroundColor: '#21262d', borderRadius: 8,
+    paddingVertical: 9, alignItems: 'center', marginTop: 10,
+    borderWidth: 1, borderColor: '#f85149',
+  },
+  retryTxt: { color: '#f85149', fontSize: 13, fontWeight: '600' },
+  manualTriggerBtn: {
+    backgroundColor: '#161b22', borderRadius: 10,
+    paddingVertical: 11, alignItems: 'center', marginBottom: 12,
+    borderWidth: 1, borderColor: '#388bfd', borderStyle: 'dashed',
+  },
+  manualTriggerTxt: { color: '#388bfd', fontWeight: '600', fontSize: 13 },
+  iconSteps: { backgroundColor: '#0d1117', borderRadius: 10, padding: 12, gap: 6 },
+  iconStep: { color: '#8b949e', fontSize: 12, lineHeight: 18 },
+  keysBtn: {
+    backgroundColor: '#b08800', borderRadius: 12,
+    paddingVertical: 14, alignItems: 'center', marginBottom: 16,
+  },
+  keysBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  tipsCard: {
+    backgroundColor: '#161b22', borderRadius: 14, padding: 16,
+    borderWidth: 1, borderColor: '#30363d',
+  },
+  tipsTitle: { color: '#e6edf3', fontSize: 14, fontWeight: '700', marginBottom: 10 },
+  tip: { color: '#8b949e', fontSize: 12, lineHeight: 20, marginBottom: 4 },
 });
