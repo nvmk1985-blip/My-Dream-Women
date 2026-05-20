@@ -26,6 +26,7 @@ const ALBUM_META: Record<string, { label: string; emoji: string; color: string; 
   downloads:   { label: 'Downloads',   emoji: '⬇️',  color: '#8E6BBE', mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video] },
   documents:   { label: 'Documents',   emoji: '📄',  color: '#3498DB', mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video] },
   music:       { label: 'Music',       emoji: '🎵',  color: '#9B59B6', mediaType: [MediaLibrary.MediaType.audio] },
+  icons:       { label: 'Icons',       emoji: '🎨',  color: '#FF6B35', mediaType: [MediaLibrary.MediaType.photo] },
   projects:    { label: 'Projects',    emoji: '💼',  color: '#8E44AD', mediaType: [MediaLibrary.MediaType.photo, MediaLibrary.MediaType.video] },
 };
 
@@ -131,13 +132,29 @@ export default function GalleryScreen() {
 
   // ── Open phone folder browser ────────────────────────────────────
   const openFolderBrowser = async () => {
-    // 1. Get / request permission
-    let perm = mlPermission;
-    if (!perm?.granted) {
-      perm = await requestMlPermission();
+    // 1. Always request permission directly — hook state may lag on first call
+    let granted = false;
+    try {
+      const result = await MediaLibrary.requestPermissionsAsync(false);
+      granted = result.granted;
+    } catch {
+      granted = false;
     }
-    if (!perm?.granted) {
-      Alert.alert('Permission வேணும்', 'Settings → My Girls → Permissions → Files & Media → Allow all');
+
+    if (!granted) {
+      // Fallback: try hook-based request once more
+      try {
+        const result2 = await requestMlPermission();
+        granted = result2?.granted ?? false;
+      } catch {}
+    }
+
+    if (!granted) {
+      Alert.alert(
+        'Permission வேணும்',
+        'Settings → My Girls → Permissions → Files & Media → Allow all\n\nPermission கொடுத்தாலும் வேலை செய்யலன்னா, App-ஐ close பண்ணி திரும்ப open பண்ணுங்க.',
+        [{ text: 'OK' }],
+      );
       return;
     }
 
