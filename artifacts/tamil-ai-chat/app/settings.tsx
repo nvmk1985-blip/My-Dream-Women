@@ -33,9 +33,16 @@ export default function SettingsScreen() {
   const [buildRunId, setBuildRunId] = useState<number | null>(null);
   const [buildMsg, setBuildMsg] = useState('');
   const [apkUrl, setApkUrl] = useState<string | null>(null);
+  const [latestApkUrl, setLatestApkUrl] = useState<string | null>(null);
+  const [wakingServer, setWakingServer] = useState(false);
+  const [serverStatus, setServerStatus] = useState<'unknown'|'ok'|'sleeping'>('unknown');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    // Load saved custom server URL
+    AsyncStorage.getItem(CUSTOM_SERVER_KEY).then(v => { if (v && v !== DEFAULT_SERVER) setCustomServerUrl(v); }).catch(() => {});
+    // Auto-fetch latest APK URL (no auth needed — public repo)
+    fetchLatestApkPublic();
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
@@ -47,6 +54,49 @@ export default function SettingsScreen() {
       const parsed: Record<string, string> = JSON.parse(saved);
       return parsed['github'] || null;
     } catch { return null; }
+  };
+
+  // Latest APK URL — no auth needed (public repo releases)
+  const fetchLatestApkPublic = async () => {
+    try {
+      const cached = await AsyncStorage.getItem('cached_apk_url');
+      if (cached) setLatestApkUrl(cached);
+      const res = await fetch(
+        `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
+        { headers: { Accept: 'application/vnd.github.v3+json' } }
+      );
+      const data = await res.json();
+      const apk = data.assets?.find((a: any) => a.name?.endsWith('.apk'));
+      if (apk?.browser_download_url) {
+        setLatestApkUrl(apk.browser_download_url);
+        await AsyncStorage.setItem('cached_apk_url', apk.browser_download_url);
+      }
+    } catch {}
+  };
+
+  // Render server-ஐ wake up பண்றோம்
+  const wakeRenderServer = async () => {
+    setWakingServer(true);
+    setServerStatus('unknown');
+    const serverUrl = (await AsyncStorage.getItem(CUSTOM_SERVER_KEY).catch(() => null)) || DEFAULT_SERVER;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 35000);
+      const res = await fetch(`${serverUrl}/api/healthz`, { signal: controller.signal });
+      clearTimeout(timer);
+      if (res.ok) {
+        setServerStatus('ok');
+        Alert.alert('✅ Server Online!', 'Render server wake ஆச்சு! இப்போ messages அனுப்பலாம்.');
+      } else {
+        setServerStatus('sleeping');
+        Alert.alert('⚠️ Server பிரச்னை', `Server respond பண்றது ஆனா error: ${res.status}`);
+      }
+    } catch {
+      setServerStatus('sleeping');
+      Alert.alert('⏳ Server Wake ஆகுது', '30-60 seconds-ல் ready ஆகும். மீண்டும் try பண்ணுங்க.');
+    } finally {
+      setWakingServer(false);
+    }
   };
 
   // GitHub Actions Build trigger செய்கிறோம்
@@ -353,6 +403,18 @@ export default function SettingsScreen() {
             }
           </TouchableOpacity>
 
+          {/* Latest APK Download — always visible */}
+          {(latestApkUrl || (buildStatus === 'success' && apkUrl)) && (
+            <TouchableOpacity
+              style={s.latestApkBanner}
+              onPress={() => Linking.openURL((latestApkUrl || apkUrl)!)}
+            >
+              <Text style={s.latestApkBannerTitle}>⬇️ Latest APK Ready!</Text>
+              <Text style={s.latestApkBannerSub} numberOfLines={1}>{latestApkUrl || apkUrl}</Text>
+              <Text style={s.latestApkBannerBtn}>Download Now</Text>
+            </TouchableOpacity>
+          )}
+
           {/* Build Status Box */}
           {buildStatus !== 'idle' && (
             <View style={[s.buildStatusBox, { borderColor: getBuildStatusColor() }]}>
@@ -421,7 +483,31 @@ export default function SettingsScreen() {
             <Text style={s.cardTitle}>Custom Server URL</Text>
           </View>
           <Text style={s.cardDesc}>Render server sleep ஆனா இந்த option-ல் வேற server URL set பண்ணலாம். Empty விட்டா default Render server use ஆகும்.</Text>
-          <Text style={{ color: '#8b949e', fontSize: 11, marginBottom: 6 }}>Current default: {DEFAULT_SERVER}</Text>
+          <Text style={{ color: '#8b949e', fontSize: 11, marginBottom: 10 }}>
+            இந்த APK-ல் built-in URL: <Text style={{ color: '#58a6ff' }}>{DEFAULT_SERVER}</Text>
+          </Text>
+          <TouchableOpacity
+            style={[s.wakeBtn, wakingServer && { opacity: 0.6 }]}
+            onPress={wakeRenderServer}
+            disabled={wakingServer}
+          >
+            {wakingServer
+              ? <><ActivityIndicator color="#fff" size="small" /><Text style={s.wakeBtnTxt}>  Waking up server...</Text></>
+              : <Text style={s.wakeBtnTxt}>
+                  {serverStatus === 'ok' ? '✅ Server Online — Ping Again' : '🔄 Render Server Wake பண்ணு'}
+                </Text>
+            }
+          </TouchableOpacity>
+          {serverStatus === 'sleeping' && (
+            <View style={s.serverOfflineBadge}>
+              <Text style={s.serverOfflineTxt}>⚠️ Server connect ஆகல — 30-60s wait பண்ணி retry பண்ணுங்க</Text>
+            </View>
+          )}
+          {serverStatus === 'ok' && (
+            <View style={[s.serverOfflineBadge, { backgroundColor: '#0d2818', borderColor: '#238636' }]}>
+              <Text style={[s.serverOfflineTxt, { color: '#3fb950' }]}>✅ Render server online — messages அனுப்பலாம்!</Text>
+            </View>
+          )}
           <TextInput
             style={{ backgroundColor: '#0d1117', color: '#e6edf3', borderRadius: 8, borderWidth: 1, borderColor: '#30363d', padding: 10, fontSize: 13, marginBottom: 10 }}
             value={customServerUrl}
@@ -550,4 +636,22 @@ const s = StyleSheet.create({
   },
   tipsTitle: { color: '#e6edf3', fontSize: 14, fontWeight: '700', marginBottom: 10 },
   tip: { color: '#8b949e', fontSize: 12, lineHeight: 20, marginBottom: 4 },
+  latestApkBanner: {
+    backgroundColor: '#0d2818', borderRadius: 12, borderWidth: 1.5, borderColor: '#238636',
+    padding: 14, marginBottom: 12, alignItems: 'center',
+  },
+  latestApkBannerTitle: { color: '#3fb950', fontSize: 15, fontWeight: '800', marginBottom: 4 },
+  latestApkBannerSub: { color: '#8b949e', fontSize: 11, marginBottom: 10 },
+  latestApkBannerBtn: { color: '#fff', fontWeight: '700', fontSize: 13, backgroundColor: '#238636', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20 },
+  wakeBtn: {
+    backgroundColor: '#1565C0', borderRadius: 10,
+    paddingVertical: 12, alignItems: 'center', marginBottom: 10,
+    flexDirection: 'row', justifyContent: 'center',
+  },
+  wakeBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  serverOfflineBadge: {
+    backgroundColor: '#1a0000', borderRadius: 8, borderWidth: 1, borderColor: '#f85149',
+    padding: 10, marginBottom: 8,
+  },
+  serverOfflineTxt: { color: '#f85149', fontSize: 12, textAlign: 'center' },
 });
