@@ -214,8 +214,7 @@ export default function SettingsScreen() {
         return;
       }
       await AsyncStorage.setItem(CUSTOM_SERVER_KEY, url || DEFAULT_SERVER);
-      Alert.alert('✅ Saved', url ? 'Custom server URL saved!
-Next message-ல் இருந்து use ஆகும்.' : 'Default server reset ஆச்சு!');
+      Alert.alert('✅ Saved', url ? `Custom server URL saved!\nNext message-ல் இருந்து use ஆகும்.` : 'Default server reset ஆச்சு!');
     } catch {
       Alert.alert('Error', 'Save பண்ண முடியல');
     } finally {
