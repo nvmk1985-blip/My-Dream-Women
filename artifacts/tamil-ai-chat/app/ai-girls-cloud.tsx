@@ -224,6 +224,8 @@ export default function AIGirlsCloudScreen() {
 
     let result: ImagePicker.ImagePickerResult;
     try {
+      // ActivityResultLauncher registration settle panna wait pannrom
+      await new Promise(r => setTimeout(r, 350));
       result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'] as any,
         allowsMultipleSelection: true,
