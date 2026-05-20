@@ -26,6 +26,7 @@ const CATEGORIES = [
   { key: 'downloads',   label: 'Downloads',   emoji: '⬇️',  bg: '#8E6BBE', route: '/gallery?album=downloads' },
   { key: 'documents',   label: 'Documents',   emoji: '📄',  bg: '#3498DB', route: '/gallery?album=documents' },
   { key: 'music',       label: 'Music',       emoji: '🎵',  bg: '#9B59B6', route: '/gallery?album=music' },
+  { key: 'icons',       label: 'Icons',       emoji: '🎨',  bg: '#FF6B35', route: '/gallery?album=icons' },
   { key: 'ai-girls',    label: 'My AI Girls', emoji: '💕',  bg: '#E91E8C', route: '/ai-girls-cloud' },
   { key: 'projects',    label: 'Projects',    emoji: '💼',  bg: '#8E44AD', route: '/gallery?album=projects' },
   { key: 'notes',       label: 'Notes',       emoji: '📝',  bg: '#E67E22', route: '/notes' },
