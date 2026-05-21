@@ -46,6 +46,17 @@ jobs:
             console.log('versionCode:', j.expo.android.versionCode);
           "
 
+      - name: Sync icon files (icon.png → adaptive-icon.png)
+        run: |
+          ICON="artifacts/tamil-ai-chat/assets/images/icon.png"
+          ADAPTIVE="artifacts/tamil-ai-chat/assets/images/adaptive-icon.png"
+          cp "$ICON" "$ADAPTIVE"
+          ICON_SHA=$(sha256sum "$ICON" | awk '{print $1}')
+          ADAP_SHA=$(sha256sum "$ADAPTIVE" | awk '{print $1}')
+          echo "✅ icon.png sha256:          $ICON_SHA"
+          echo "✅ adaptive-icon.png sha256: $ADAP_SHA"
+          echo "✅ Icons synced — both files identical"
+
       - name: Verify app icon
         run: |
           ICON="artifacts/tamil-ai-chat/assets/images/icon.png"
