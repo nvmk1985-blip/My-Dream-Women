@@ -1,3 +1,4 @@
+sha: 6c18e4ccffc1a8a5b2fa5b5b6152a848479ee8d7
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Alert,
@@ -463,24 +464,19 @@ export default function GalleryScreen() {
 
         {/* Action buttons */}
         <View style={s.actionRow}>
-          <TouchableOpacity style={s.uploadBtn} onPress={openFolderBrowser} disabled={uploading}>
-            <Text style={s.uploadBtnTxt}>⬆ Upload</Text>
+          <TouchableOpacity
+            style={[s.uploadBtn, albumKey === 'icons' && { backgroundColor: '#FF6B35' }]}
+            onPress={albumKey === 'icons' ? pickIconWithCrop : openFolderBrowser}
+            disabled={uploading}
+          >
+            <Text style={s.uploadBtnTxt}>
+              {albumKey === 'icons' ? '🎨 Icon Upload (1:1)' : '⬆ Upload'}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity style={s.newFolderBtn} onPress={() => { setFolderName(''); setFolderDialog(true); }}>
             <Text style={s.newFolderTxt}>📁 New Folder</Text>
           </TouchableOpacity>
         </View>
-
-        {/* Icons folder: special 1:1 crop upload */}
-        {albumKey === 'icons' && (
-          <TouchableOpacity
-            style={s.iconCropBtn}
-            onPress={pickIconWithCrop}
-            disabled={uploading}
-          >
-            <Text style={s.iconCropBtnTxt}>🎨 Gallery-ல் Select → 1:1 Crop → Icons Save</Text>
-          </TouchableOpacity>
-        )}
 
         {/* Sub-folders */}
         {depth === 0 && subFolders.length > 0 && (
