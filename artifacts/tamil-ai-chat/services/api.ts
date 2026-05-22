@@ -248,3 +248,44 @@ export async function deleteFromCloudinary(public_id: string): Promise<void> {
     throw new Error(err?.error || 'Delete failed');
   }
 }
+
+// ── HuggingFace Inference API — Text-to-Image ─────────────────
+export const HF_IMAGE_MODEL = 'PenguinKaDushman/PornMaster-pro-V7';
+const HF_API_BASE = 'https://api-inference.huggingface.co/models';
+
+export async function generateImageHuggingFace(
+  prompt: string,
+  hfToken: string,
+  model: string = HF_IMAGE_MODEL,
+): Promise<{ b64_json: string; mimeType: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 180000);
+  try {
+    const res = await fetch(`${HF_API_BASE}/${model}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${hfToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'image/jpeg',
+      },
+      body: JSON.stringify({ inputs: prompt }),
+      signal: controller.signal,
+    });
+    if (res.status === 503) {
+      throw new Error('Model load ஆகுது... 30–60 sec wait பண்ணி மீண்டும் try பண்ணுங்க');
+    }
+    if (!res.ok) {
+      let errMsg = `HuggingFace error: ${res.status}`;
+      try { const e = await res.json() as any; errMsg = e?.error || errMsg; } catch {}
+      throw new Error(errMsg);
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    const uint8 = new Uint8Array(arrayBuffer);
+    let binary = '';
+    for (let i = 0; i < uint8.byteLength; i++) binary += String.fromCharCode(uint8[i]);
+    const b64 = btoa(binary);
+    return { b64_json: b64, mimeType: 'image/jpeg' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
