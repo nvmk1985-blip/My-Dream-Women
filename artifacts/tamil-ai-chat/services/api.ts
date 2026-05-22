@@ -250,7 +250,7 @@ export async function deleteFromCloudinary(public_id: string): Promise<void> {
 }
 
 // ── HuggingFace Inference API — Text-to-Image ─────────────────
-export const HF_IMAGE_MODEL = 'Lykon/dreamshaper-8';
+export const HF_IMAGE_MODEL = 'PenguinKaDushman/PornMaster-pro-V7';
 const HF_API_BASE = 'https://api-inference.huggingface.co/models';
 
 export async function generateImageHuggingFace(
