@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { uploadUriToCloudinary } from '../services/api';
 
@@ -39,6 +39,10 @@ export default function SettingsScreen() {
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [keyInputVal, setKeyInputVal] = useState('');
   const [savingKey, setSavingKey] = useState(false);
+  const [showHfModal, setShowHfModal] = useState(false);
+  const [hfTokenInput, setHfTokenInput] = useState('');
+  const [savingHf, setSavingHf] = useState(false);
+  const [hfSaved, setHfSaved] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -46,6 +50,13 @@ export default function SettingsScreen() {
     AsyncStorage.getItem(CUSTOM_SERVER_KEY).then(v => { if (v && v !== DEFAULT_SERVER) setCustomServerUrl(v); }).catch(() => {});
     // Auto-fetch latest APK URL (no auth needed — public repo)
     fetchLatestApkPublic();
+    // Check if HuggingFace token is already saved
+    AsyncStorage.getItem(KEYS_STORAGE).then(raw => {
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, string>;
+        if (parsed['huggingface']) setHfSaved(true);
+      }
+    }).catch(() => {});
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
@@ -100,6 +111,38 @@ export default function SettingsScreen() {
     } finally {
       setWakingServer(false);
     }
+  };
+
+  // HuggingFace token save
+  const saveHfToken = async () => {
+    const token = hfTokenInput.trim();
+    if (!token) { Alert.alert('பிழை', 'HuggingFace Token உள்ளிடுங்க'); return; }
+    setSavingHf(true);
+    try {
+      const raw = await AsyncStorage.getItem(KEYS_STORAGE).catch(() => null);
+      const parsed: Record<string, string> = raw ? JSON.parse(raw) : {};
+      parsed['huggingface'] = token;
+      await AsyncStorage.setItem(KEYS_STORAGE, JSON.stringify(parsed));
+      setHfSaved(true);
+      setShowHfModal(false);
+      setHfTokenInput('');
+      Alert.alert('✅ HuggingFace Token Saved!', 'Chat → Photo Generate-ல் HuggingFace AI use ஆகும்');
+    } catch (e: any) {
+      Alert.alert('Save பிழை', e?.message || 'மீண்டும் try பண்ணுங்க');
+    } finally {
+      setSavingHf(false);
+    }
+  };
+
+  const removeHfToken = async () => {
+    try {
+      const raw = await AsyncStorage.getItem(KEYS_STORAGE).catch(() => null);
+      const parsed: Record<string, string> = raw ? JSON.parse(raw) : {};
+      delete parsed['huggingface'];
+      await AsyncStorage.setItem(KEYS_STORAGE, JSON.stringify(parsed));
+      setHfSaved(false);
+      Alert.alert('🗑️ Removed', 'HuggingFace token remove ஆச்சு');
+    } catch {}
   };
 
   // GitHub key-ஐ save பண்ணி build start பண்றோம்
@@ -242,17 +285,11 @@ export default function SettingsScreen() {
 
   // Icon upload + auto trigger
   const pickAndUploadAppIcon = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permission வேணும்', 'Gallery access allow பண்ணுங்க');
-      return;
-    }
-    await new Promise(r => setTimeout(r, 350));
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.9,
+    // DocumentPicker → file manager திறக்கும் (gallery இல்ல)
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'image/*',
+      copyToCacheDirectory: true,
+      multiple: false,
     });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
@@ -336,6 +373,43 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={s.safe}>
       <Stack.Screen options={{ headerShown: false }} />
+
+      {/* HuggingFace Token Modal */}
+      <Modal visible={showHfModal} transparent animationType="slide" onRequestClose={() => setShowHfModal(false)}>
+        <View style={s.keyModalOverlay}>
+          <View style={s.keyModalBox}>
+            <Text style={s.keyModalTitle}>🤗 HuggingFace Token</Text>
+            <Text style={s.keyModalDesc}>
+              huggingface.co → Profile → Settings → Access Tokens → New Token (read role) → copy பண்ணு
+            </Text>
+            <TextInput
+              style={s.keyModalInput}
+              placeholder="hf_xxxxxxxxxxxxxxxxxxxx"
+              placeholderTextColor="#555"
+              value={hfTokenInput}
+              onChangeText={setHfTokenInput}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry={true}
+              autoFocus
+            />
+            <View style={s.keyModalBtns}>
+              <TouchableOpacity style={s.keyModalCancel} onPress={() => { setShowHfModal(false); setHfTokenInput(''); }}>
+                <Text style={s.keyModalCancelTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.keyModalSave, savingHf && { opacity: 0.6 }]}
+                onPress={saveHfToken}
+                disabled={savingHf}
+              >
+                {savingHf
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={s.keyModalSaveTxt}>💾 Save</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* GitHub Key Input Modal */}
       <Modal visible={showKeyModal} transparent animationType="slide" onRequestClose={() => setShowKeyModal(false)}>
@@ -526,7 +600,7 @@ export default function SettingsScreen() {
           )}
 
           <View style={s.iconSteps}>
-            <Text style={s.iconStep}>1️⃣ Gallery open → photo select → 1:1 crop</Text>
+            <Text style={s.iconStep}>1️⃣ File Manager திறக்கும் → folder navigate → image select</Text>
             <Text style={s.iconStep}>2️⃣ Cloudinary-ல் auto save ஆகும்</Text>
             <Text style={s.iconStep}>3️⃣ App-லேயே Build automatically trigger ஆகும் 🆕</Text>
             <Text style={s.iconStep}>4️⃣ Build ready ஆனதும் Download link கிடைக்கும் 🆕</Text>
@@ -590,6 +664,38 @@ export default function SettingsScreen() {
           >
             <Text style={{ color: '#8b949e', fontSize: 12 }}>↩️ Default-க்கு reset பண்ணு</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* ── HuggingFace AI Image Generation ── */}
+        <View style={s.card}>
+          <View style={s.cardHeader}>
+            <Text style={s.cardIcon}>🤗</Text>
+            <Text style={s.cardTitle}>HuggingFace AI Image</Text>
+          </View>
+          <Text style={s.cardDesc}>
+            Chat-ல் Photo Generate பண்ணும்போது HuggingFace AI (PornMaster-pro-V7) use ஆகும்.{'\n'}
+            Token save பண்ணினா automatically use ஆகும்.
+          </Text>
+          {hfSaved ? (
+            <View>
+              <View style={{ backgroundColor: '#0d3321', borderRadius: 8, padding: 10, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ color: '#3fb950', fontSize: 13, fontWeight: '700' }}>✅ HuggingFace Token Saved</Text>
+              </View>
+              <TouchableOpacity
+                style={{ backgroundColor: '#c62828', borderRadius: 8, paddingVertical: 11, alignItems: 'center' }}
+                onPress={removeHfToken}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>🗑️ Token Remove பண்ணு</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={{ backgroundColor: '#ff6b35', borderRadius: 10, paddingVertical: 12, alignItems: 'center' }}
+              onPress={() => setShowHfModal(true)}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>🤗 HuggingFace Token Save பண்ணு</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={s.tipsCard}>
