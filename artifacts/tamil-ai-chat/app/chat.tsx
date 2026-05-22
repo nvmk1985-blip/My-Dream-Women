@@ -90,6 +90,64 @@ const BUILTIN_PHOTO_STYLES = [
 const CUSTOM_STYLES_KEY = 'custom_photo_styles_v1';
 type CustomStyle = { id: string; label: string; prompt?: string };
 
+
+// ── Text-based photo request detection ──────────────────────────────────────
+// Maps keywords in user's text message → a PHOTO_STYLES id.
+// Returns styleId if a photo request is detected, null otherwise.
+function detectPhotoStyle(
+  text: string,
+  allStyles: Array<{id: string; label: string}>,
+  currentStyleId: string,
+): string | null {
+  const t = text.toLowerCase();
+
+  // Per-style keyword → id mapping (English + Tamil)
+  const STYLE_KEYWORDS: { id: string; words: string[] }[] = [
+    { id: 'normal',     words: ['normal photo', 'normal pic', 'normal படம்', 'normal image', 'plain photo'] },
+    { id: 'nude',       words: ['nude', 'naked', 'nakka', 'நக்கா', 'நிர்வாணம்', 'full naked', 'full nude', 'ஆடையில்லா'] },
+    { id: 'seminude',   words: ['semi nude', 'semi-nude', 'seminude', 'half nude', 'half naked', 'partly naked', 'அரை நிர்வாண'] },
+    { id: 'breast',     words: ['breast', 'boobs', 'மார்பு', 'topless', 'bra இல்லாம', 'chest show', 'boob', 'மார்பக'] },
+    { id: 'seductive',  words: ['seductive', 'sexy pose', 'கவர்ச்சி', 'sexy look', 'alluring', 'provocative', 'seduce'] },
+    { id: 'wet',        words: ['wet clothes', 'wet dress', 'wet saree', 'wet sari', 'ஈரமான', 'wet cloth', '濡れた'] },
+    { id: 'legs',       words: ['legs spread', 'leg spread', 'கால் விரி', 'spread legs', 'கால் பரப்பி', 'legs open'] },
+    { id: 'saree',      words: ['saree', 'சேலை', 'saree lift', 'saree thooki', 'saree thuki', 'sari', 'தூக்கி', 'சேலை தூக்கி'] },
+    { id: 'sleeping',   words: ['sleeping', 'படுக்க', 'படுத்து', 'pad photo', 'bed photo', 'lying down', 'தூங்கு', 'sleep pose'] },
+    { id: 'halfbreast', words: ['half breast', 'cleavage', 'deep cleavage', 'low cut', 'deep neck', 'முக்கால் மார்பு'] },
+  ];
+
+  // Check custom style labels dynamically
+  for (const style of allStyles) {
+    if (style.id.startsWith('custom_') && t.includes(style.label.toLowerCase())) {
+      return style.id;
+    }
+  }
+
+  // Check built-in style keywords
+  for (const entry of STYLE_KEYWORDS) {
+    if (entry.words.some(w => t.includes(w))) {
+      return entry.id;
+    }
+  }
+
+  // Generic photo request → use currently selected style
+  const GENERIC_PHOTO_PATTERNS = [
+    'photo podu', 'photo podunga', 'photo kudu', 'photo send', 'photo show',
+    'photo vaa', 'photo vennum', 'photo pathukka', 'photo kaatu', 'photo kaattu',
+    'pic podu', 'pic send', 'pic kudu', 'pic show', 'pic vaa',
+    'படம் போடு', 'படம் அனுப்பு', 'படம் கொடு', 'படம் காட்டு',
+    'image send', 'image podu', 'image kudu',
+    'oru photo', 'one photo', 'photo da', 'ennoda photo',
+    'un photo', 'un pic', 'un padham', 'un padham kaatu',
+    'photo nu podu', 'photo nu kaatu', 'photo poduda',
+  ];
+
+  if (GENERIC_PHOTO_PATTERNS.some(p => t.includes(p))) {
+    return currentStyleId;
+  }
+
+  return null;
+}
+
 export default function ChatScreen() {
   const router = useRouter();
   const params = ParamsStore.getChatParams();
@@ -502,6 +560,20 @@ export default function ChatScreen() {
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text || loading) return;
+
+    // ── Text-based photo request detection ──────────────────────────
+    // If user typed a photo request, show photo directly (same as camera button)
+    const detectedPhotoStyle = detectPhotoStyle(text, PHOTO_STYLES, selectedStyleId);
+    if (detectedPhotoStyle !== null) {
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(), role: 'user', content: text, timestamp: new Date(),
+      }]);
+      setInput('');
+      // Slight delay so user message renders first
+      setTimeout(() => handleShowGalleryInChat(detectedPhotoStyle), 50);
+      return;
+    }
+
 
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content: text, timestamp: new Date() };
     setMessages(prev => [...prev, userMsg]);
