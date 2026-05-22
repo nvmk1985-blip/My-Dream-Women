@@ -33,7 +33,7 @@
       },
       "package": "com.smk1.tamilaichat",
       "versionCode": 62,
-      "softwareKeyboardLayoutMode": "pan",
+      "softwareKeyboardLayoutMode": "adjustResize",
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.RECEIVE_BOOT_COMPLETED",
