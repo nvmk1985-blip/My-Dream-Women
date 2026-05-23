@@ -1512,13 +1512,13 @@ export default function ChatScreen() {
       </Modal>
 
       {/* ── Select Text Modal ── */}
-      <Modal visible={showSelectText} transparent animationType=fade onRequestClose={() => setShowSelectText(false)}>
+      <Modal visible={showSelectText} transparent animationType="fade" onRequestClose={() => setShowSelectText(false)}>
         <TouchableOpacity style={styles.selectTextOverlay} activeOpacity={1} onPress={() => setShowSelectText(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.selectTextBox}>
             <Text style={styles.selectTextTitle}>✏️ Select & Copy Text</Text>
             <Text style={styles.selectTextHint}>Text-ஐ press பண்ணி drag செய்து select பண்ணுங்க</Text>
             <ScrollView style={styles.selectTextScroll}>
-              <Text selectable style={styles.selectTextContent} selectionColor=#E91E8C44>
+              <Text selectable style={styles.selectTextContent} selectionColor={"#E91E8C44"}>
                 {selectedMsg?.content ?? ''}
               </Text>
             </ScrollView>
