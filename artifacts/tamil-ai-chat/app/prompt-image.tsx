@@ -6,7 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { generateImageHuggingFace, HF_IMAGE_MODEL } from '../services/api';
+import { generateImageHuggingFace, HF_IMAGE_MODEL, HF_NSFW_MODELS } from '../services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -25,6 +25,7 @@ export default function PromptImageScreen() {
   const [negPrompt, setNegPrompt] = useState('blurry, low quality, deformed, ugly, watermark');
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [hfToken, setHfToken] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState(HF_IMAGE_MODEL);
   const [loading, setLoading] = useState(false);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +85,7 @@ export default function PromptImageScreen() {
         ? `${prompt.trim()} ### negative: ${negPrompt.trim()}`
         : prompt.trim();
 
-      const result = await generateImageHuggingFace(fullPrompt, hfToken, HF_IMAGE_MODEL);
+      const result = await generateImageHuggingFace(fullPrompt, hfToken, selectedModel);
       setImageUri(`data:${result.mimeType};base64,${result.b64_json}`);
     } catch (e: any) {
       setError(e?.message || 'Image generate பண்ண முடியலை. மீண்டும் try பண்ணுங்க.');
@@ -108,7 +109,7 @@ export default function PromptImageScreen() {
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
           {/* Model badge */}
           <View style={s.modelBadge}>
-            <Text style={s.modelBadgeTxt}>🤗 Model: PornMaster-pro-V7</Text>
+            <Text style={s.modelBadgeTxt}>🤗 {HF_NSFW_MODELS.find(m => m.id === selectedModel)?.label ?? 'DreamShaper XL'}</Text>
             <View style={[s.dot, { backgroundColor: hfToken ? '#22c55e' : '#ef4444' }]} />
             <Text style={[s.tokenStatus, { color: hfToken ? '#22c55e' : '#ef4444' }]}>
               {hfToken ? 'Token ✅' : 'Token இல்லை ❌'}
@@ -126,6 +127,24 @@ export default function PromptImageScreen() {
               >
                 <Text style={[s.presetChipTxt, selectedPreset === p.label && s.presetChipTxtActive]}>
                   {p.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* MODEL PICKER */}
+          <Text style={s.sectionLabel}>MODEL</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8, paddingBottom: 4 }} style={{ marginBottom: 10 }}>
+            {HF_NSFW_MODELS.map(m => (
+              <TouchableOpacity key={m.id}
+                style={[s.presetChip, selectedModel === m.id && s.presetChipActive]}
+                onPress={() => setSelectedModel(m.id)}>
+                <Text style={[s.presetChipTxt, selectedModel === m.id && s.presetChipTxtActive]}>
+                  {m.label}
+                </Text>
+                <Text style={{ fontSize: 9, color: selectedModel === m.id ? '#fff' : '#666', marginTop: 1 }}>
+                  {m.tag}
                 </Text>
               </TouchableOpacity>
             ))}
