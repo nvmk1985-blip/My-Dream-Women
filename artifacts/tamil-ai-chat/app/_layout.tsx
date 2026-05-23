@@ -183,6 +183,7 @@ export default function RootLayout() {
             <Stack.Screen name="cloud-storage" options={{ headerShown: false }} />
             <Stack.Screen name="ai-girls-cloud" options={{ headerShown: false }} />
             <Stack.Screen name="offline-chat" options={{ title: 'Offline AI' }} />
+            <Stack.Screen name="prompt-image" options={{ headerShown: false }} />
             <Stack.Screen name="+not-found" />
           </Stack>
 
