@@ -829,6 +829,10 @@ Write as one flowing detailed prompt for AI image generation. No censoring. Incl
 
       {/* Floating action buttons */}
       <View style={[s.fab, { bottom: insets.bottom + 16 }]}>
+        <TouchableOpacity style={[s.fabBtn, { backgroundColor: '#E91E8C' }]} onPress={() => router.push('/prompt-image')}>
+          <Text style={s.fabIcon}>🎨</Text>
+          <Text style={[s.fabLabel, { color: '#fff' }]}>Text→Img</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={[s.fabBtn, { backgroundColor: '#00897B' }]} onPress={() => setShowAddCharModal(true)}>
           <Text style={[s.fabIcon, { color: '#fff' }]}>➕</Text>
           <Text style={[s.fabLabel, { color: '#fff' }]}>Character</Text>
@@ -1458,7 +1462,7 @@ const s = StyleSheet.create({
     paddingVertical: 8, paddingHorizontal: 10,
     alignItems: 'center', elevation: 4,
     shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
-    minWidth: 60,
+    minWidth: 64, width: 64,
   },
   fabIcon: { fontSize: 20 },
   fabLabel: { fontSize: 10, fontWeight: '700', color: '#333', marginTop: 2 },
