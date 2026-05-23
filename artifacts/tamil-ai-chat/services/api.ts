@@ -324,49 +324,112 @@ export async function deleteFromCloudinary(public_id: string): Promise<void> {
 
 // ── HuggingFace Inference API — Text-to-Image ─────────────────
 export const HF_IMAGE_MODEL = 'PenguinKaDushman/PornMaster-pro-V7';
-const HF_API_BASE = 'https://api-inference.huggingface.co/models';
+const HF_ENDPOINTS = [
+  'https://api-inference.huggingface.co/models',
+  'https://router.huggingface.co/hf-inference/models',
+];
+
+// Convert blob to base64 using FileReader (Android-safe, no arrayBuffer issues)
+async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      // result is "data:image/jpeg;base64,XXXX" — strip prefix
+      const b64 = result.includes(',') ? result.split(',')[1] : result;
+      resolve(b64 || '');
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
 export async function generateImageHuggingFace(
   prompt: string,
   hfToken: string,
   model: string = HF_IMAGE_MODEL,
 ): Promise<{ b64_json: string; mimeType: string }> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 180000);
-  try {
-    const res = await fetch(`${HF_API_BASE}/${model}`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${hfToken}`,
-        'Content-Type': 'application/json',
-        Accept: 'image/jpeg',
-      },
-      body: JSON.stringify({ inputs: prompt }),
-      signal: controller.signal,
-    });
-    if (res.status === 503) {
-      throw new Error('Model load ஆகுது... 30–60 sec wait பண்ணி மீண்டும் try பண்ணுங்க');
+  let lastError: Error = new Error('HuggingFace connection failed');
+
+  // Try each endpoint (primary then fallback)
+  for (const base of HF_ENDPOINTS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120000);
+    try {
+      const res = await fetch(`${base}/${model}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${hfToken}`,
+          'Content-Type': 'application/json',
+          'X-Wait-For-Model': 'true',
+        },
+        body: JSON.stringify({ inputs: prompt, parameters: { num_inference_steps: 20 } }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      if (res.status === 503) {
+        // Model loading — wait and retry same endpoint once
+        await new Promise(r => setTimeout(r, 20000));
+        const res2 = await fetch(`${base}/${model}`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${hfToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ inputs: prompt }),
+        });
+        if (!res2.ok) {
+          const e = await res2.json().catch(() => ({})) as any;
+          throw new Error(e?.error || `Model unavailable (${res2.status})`);
+        }
+        const blob2 = await res2.blob();
+        const mimeType2 = res2.headers.get('content-type') || 'image/jpeg';
+        const b64_2 = await blobToBase64(blob2);
+        if (!b64_2) throw new Error('Empty image response');
+        return { b64_json: b64_2, mimeType: mimeType2.split(';')[0] };
+      }
+
+      if (!res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('json')) {
+          const e = await res.json().catch(() => ({})) as any;
+          const msg = e?.error || e?.message || `HTTP ${res.status}`;
+          // 401 = wrong token, 403 = gated model — no point retrying other endpoint
+          if (res.status === 401) throw new Error('HuggingFace token தவறானது ❌ — Keys-ல் சரியான token போடுங்க');
+          if (res.status === 403) throw new Error('இந்த model access இல்லை ❌ — HuggingFace-ல் model access request பண்ணுங்க');
+          throw new Error(msg);
+        }
+        throw new Error(`HuggingFace error: ${res.status}`);
+      }
+
+      // Success — read as blob (Android-safe)
+      const blob = await res.blob();
+      const mimeType = res.headers.get('content-type') || 'image/jpeg';
+
+      // Check if response is JSON error disguised as image
+      if (mimeType.includes('json') || mimeType.includes('text')) {
+        const text = await blob.text();
+        let parsed: any = {};
+        try { parsed = JSON.parse(text); } catch {}
+        const b64 = parsed?.image || parsed?.images?.[0] || parsed?.generated_image || '';
+        if (b64) return { b64_json: b64, mimeType: 'image/jpeg' };
+        throw new Error(parsed?.error || 'JSON response — image இல்லை');
+      }
+
+      const b64 = await blobToBase64(blob);
+      if (!b64) throw new Error('Empty image data');
+      return { b64_json: b64, mimeType: mimeType.split(';')[0] };
+
+    } catch (e: any) {
+      clearTimeout(timer);
+      lastError = e;
+      // Don't retry auth errors
+      if (e?.message?.includes('token') || e?.message?.includes('access')) throw e;
+      // Try next endpoint
+      continue;
     }
-    if (!res.ok) {
-      let errMsg = `HuggingFace error: ${res.status}`;
-      try { const e = await res.json() as any; errMsg = e?.error || errMsg; } catch {}
-      throw new Error(errMsg);
-    }
-    const contentType = res.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      // Some models return JSON with base64 or image URLs
-      const json = await res.json() as any;
-      const b64 = json.image || json.images?.[0] || json.generated_image || '';
-      if (!b64) throw new Error('HuggingFace: JSON response-ல் image இல்லை');
-      return { b64_json: b64, mimeType: 'image/jpeg' };
-    }
-    const arrayBuffer = await res.arrayBuffer();
-    const uint8 = new Uint8Array(arrayBuffer);
-    let binary = '';
-    for (let i = 0; i < uint8.byteLength; i++) binary += String.fromCharCode(uint8[i]);
-    const b64 = btoa(binary);
-    return { b64_json: b64, mimeType: 'image/jpeg' };
-  } finally {
-    clearTimeout(timer);
   }
+
+  throw lastError;
 }
