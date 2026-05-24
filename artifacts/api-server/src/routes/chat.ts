@@ -144,7 +144,11 @@ router.post("/chat", async (req, res) => {
     if (clientApiKey?.trim()) tryKeys.push(clientApiKey.trim());
     for (const k of serverKeys) if (!tryKeys.includes(k)) tryKeys.push(k);
 
-    const baseUrl = process.env["AI_INTEGRATIONS_GEMINI_BASE_URL"];
+    // When client sends their own key → bypass Replit proxy → call Google directly
+    // When no client key → use Replit AI Integration proxy as fallback
+    const baseUrl = clientApiKey?.trim()
+      ? undefined
+      : process.env["AI_INTEGRATIONS_GEMINI_BASE_URL"];
 
     const contents = messages.map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
