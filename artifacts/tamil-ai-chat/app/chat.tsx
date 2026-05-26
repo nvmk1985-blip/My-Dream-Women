@@ -158,6 +158,8 @@ export default function ChatScreen() {
   const [persona, setPersona] = useState<Persona | undefined>(undefined);
   const [avatarUri, setAvatarUri] = useState<string | undefined>(undefined);
   const [avatarAsBg, setAvatarAsBg] = useState(false);
+  const [normalAvatarUri, setNormalAvatarUri] = useState<string | undefined>(undefined);
+  const [presanaAvatarUri, setPresanaAvatarUri] = useState<string | undefined>(undefined);
   const [userPhotoUri, setUserPhotoUri] = useState<string | null>(null);
   const [userName, setUserName]           = useState('');
   const [userBehaviour, setUserBehaviour] = useState('');
@@ -172,6 +174,8 @@ export default function ChatScreen() {
           const data = JSON.parse(saved);
           setPersona({ ...base, ...data, prompt: data.prompt ?? base.prompt });
           setAvatarUri(data.avatarPhotoUri);
+          setNormalAvatarUri(data.normalAvatarUri);
+          setPresanaAvatarUri(data.presanaAvatarUri);
           setPresanaBehaviour(data.presanaBehaviour ?? '');
           setNormalBehaviour(data.normalBehaviour ?? '');
         } else {
@@ -948,8 +952,8 @@ export default function ChatScreen() {
       <View style={[styles.msgRow, isUser ? styles.userRow : styles.aiRow]}>
         {!isUser && persona && (
           <View style={styles.avatarWrap}>
-            {avatarUri
-              ? <Image source={{ uri: avatarUri }} style={styles.avatarImg} />
+            {activeAvatarUri
+              ? <Image source={{ uri: activeAvatarUri }} style={styles.avatarImg} />
               : <View style={[styles.avatarCircle, { backgroundColor: persona.avatarColor }]}>
                   <Text style={styles.avatarEmoji}>{persona.avatarLetter || persona.emoji}</Text>
                 </View>
@@ -1003,10 +1007,14 @@ export default function ChatScreen() {
       : '🗣 Normal'
     : null;
 
+  const activeAvatarUri = moodMode === 'presana'
+    ? (presanaAvatarUri || avatarUri)
+    : (normalAvatarUri || avatarUri);
+
   const headerTitle = () => (
     <TouchableOpacity style={styles.headerTitleWrap} onPress={pickAvatarPhoto}>
       {avatarUri
-        ? <Image source={{ uri: avatarUri }} style={styles.headerAvatarImg} />
+        ? <Image source={{ uri: activeAvatarUri }} style={styles.headerAvatarImg} />
         : persona
           ? <View style={[styles.headerAvatar, { backgroundColor: persona.avatarColor }]}>
               <Text style={styles.headerAvatarText}>{persona.avatarLetter || persona.emoji}</Text>
@@ -1061,8 +1069,8 @@ export default function ChatScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: wallpaperBg }]}>
       <StatusBar backgroundColor="#075E54" barStyle="light-content" />
-      {avatarAsBg && avatarUri ? (
-        <Image source={{ uri: avatarUri }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.12 }} blurRadius={6} resizeMode="cover" />
+      {avatarAsBg && activeAvatarUri ? (
+        <Image source={{ uri: activeAvatarUri }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.12 }} blurRadius={6} resizeMode="cover" />
       ) : null}
       <Stack.Screen options={{
         headerTitle,
