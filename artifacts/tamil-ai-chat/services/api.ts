@@ -310,6 +310,28 @@ export async function listCloudinaryImages(
   }
 }
 
+
+export async function listCloudinaryVideos(
+  characterName: string,
+): Promise<{ url: string; public_id: string; format?: string }[]> {
+  const folder = `my-girls/videos/${characterName.toLowerCase()}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch(
+      `${REPLIT_API}/api/cloudinary/videos?folder=${encodeURIComponent(folder)}`,
+      { signal: controller.signal },
+    );
+    if (!res.ok) return [];
+    const data = await res.json() as any;
+    return data.videos || [];
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function deleteFromCloudinary(public_id: string): Promise<void> {
   const res = await fetch(`${REPLIT_API}/api/cloudinary/delete`, {
     method: 'DELETE',
