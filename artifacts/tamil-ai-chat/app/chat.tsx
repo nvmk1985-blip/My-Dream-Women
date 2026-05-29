@@ -1167,6 +1167,14 @@ export default function ChatScreen() {
               <ActivityIndicator color="#075E54" size="small" />
               <Text selectable style={[styles.msgText, { color: msgTextColor }]}>{item.content}</Text>
             </View>
+          ) : item.imageUrl ? (
+            <TouchableOpacity onPress={() => setFullViewImg(item.imageUrl!)} onLongPress={() => setSelectedMsg(item)} delayLongPress={400}>
+              <Image source={{ uri: item.imageUrl }} style={styles.generatedImg} resizeMode="cover" />
+              <Text selectable style={[styles.msgText, { color: msgTextColor, marginTop: 4 }]}>{item.content}</Text>
+            </TouchableOpacity>
+          ) : (
+            <Text selectable style={[styles.msgText, { color: msgTextColor }]}>{item.content}</Text>
+          )}
           {item.videoUrl && (
             <TouchableOpacity
               style={{ width: 220, height: 140, backgroundColor: '#111', borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginBottom: 6, overflow: 'hidden' }}
@@ -1175,14 +1183,6 @@ export default function ChatScreen() {
               <Text style={{ fontSize: 44 }}>▶️</Text>
               <Text style={{ color: '#fff', fontSize: 11, marginTop: 4 }}>Tap to play video</Text>
             </TouchableOpacity>
-          )}
-          ) : item.imageUrl ? (
-            <TouchableOpacity onPress={() => setFullViewImg(item.imageUrl!)} onLongPress={() => setSelectedMsg(item)} delayLongPress={400}>
-              <Image source={{ uri: item.imageUrl }} style={styles.generatedImg} resizeMode="cover" />
-              <Text selectable style={[styles.msgText, { color: msgTextColor, marginTop: 4 }]}>{item.content}</Text>
-            </TouchableOpacity>
-          ) : (
-            <Text selectable style={[styles.msgText, { color: msgTextColor }]}>{item.content}</Text>
           )}
           <Text style={[styles.timeText, { color: timeTextColor }]}>
             {item.timestamp.toLocaleTimeString('ta-IN', { hour: '2-digit', minute: '2-digit' })}
