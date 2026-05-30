@@ -266,6 +266,8 @@ export default function ChatScreen() {
         setUserNormalBeh(data.userNormalBeh ?? '');
         setUserPresanaBeh(data.userPresanaBeh ?? '');
         setUserBodyDesc(data.userBodyDesc ?? '');
+        setAvatarReflectionEnabled(data.avatarReflectionEnabled !== false);
+        setAvatarReflectionPrompt(data.avatarReflectionPrompt ?? '');
       } else {
         setPersona(base);
         setAvatarUri(base.avatarPhotoUri);
@@ -279,6 +281,38 @@ export default function ChatScreen() {
 
   // Reload persona when returning from edit-character screen
   useFocusEffect(useCallback(() => { reloadPersona(); }, [reloadPersona]));
+
+  // ── Auto-analyze avatar images for Avatar Reflection feature ────────
+  useEffect(() => {
+    const API_URL = (process.env['EXPO_PUBLIC_API_URL'] ?? '').replace(/\/$/, '');
+    const analyzeUri = async (uri: string, key: string): Promise<string | null> => {
+      try {
+        const cached = await AsyncStorage.getItem('avdesc_' + key);
+        if (cached) return cached;
+        const res = await fetch(API_URL + '/api/image-to-prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_url: uri }),
+        });
+        if (!res.ok) return null;
+        const data = await res.json() as any;
+        if (data?.prompt) {
+          await AsyncStorage.setItem('avdesc_' + key, data.prompt.slice(0, 600));
+          return data.prompt.slice(0, 600);
+        }
+      } catch {}
+      return null;
+    };
+    const run = async () => {
+      const desc: { main?: string; normal?: string; presana?: string; user?: string } = {};
+      if (avatarUri)        { const d = await analyzeUri(avatarUri,        'main_' + avatarUri.slice(-20));        if (d) desc.main    = d; }
+      if (normalAvatarUri)  { const d = await analyzeUri(normalAvatarUri,  'norm_' + normalAvatarUri.slice(-20));  if (d) desc.normal  = d; }
+      if (presanaAvatarUri) { const d = await analyzeUri(presanaAvatarUri, 'pres_' + presanaAvatarUri.slice(-20)); if (d) desc.presana = d; }
+      if (userPhotoUri)     { const d = await analyzeUri(userPhotoUri,     'user_' + userPhotoUri.slice(-20));     if (d) desc.user    = d; }
+      if (Object.keys(desc).length > 0) setAvatarDescriptions(desc);
+    };
+    run();
+  }, [avatarUri, normalAvatarUri, presanaAvatarUri, userPhotoUri]);
 
   const welcome = persona
     ? (persona.greeting?.trim() || `வணக்கம்! நான் ${persona.name}. என்ன கதைக்கணும்? 😊`)
@@ -316,6 +350,9 @@ export default function ChatScreen() {
   const [userNormalBeh, setUserNormalBeh] = useState('');
   const [userPresanaBeh, setUserPresanaBeh] = useState('');
   const [userBodyDesc, setUserBodyDesc] = useState('');
+  const [avatarReflectionEnabled, setAvatarReflectionEnabled] = useState(true);
+  const [avatarReflectionPrompt, setAvatarReflectionPrompt] = useState('');
+  const [avatarDescriptions, setAvatarDescriptions] = useState<{main?: string; normal?: string; presana?: string; user?: string}>({});
 
   // ── Chat Style (wallpaper + bubble) ──
   const [chatWallpaper, setChatWallpaper] = useState('default');
@@ -764,6 +801,15 @@ export default function ChatScreen() {
         // Image 3 — presana mode photo
         if (presanaAvatarUri) lines.push(`Image 3 (Presana mode photo): ${presanaAvatarUri}`);
 
+        // Avatar visual descriptions (auto-analyzed via image-to-prompt Gemini)
+        if (Object.keys(avatarDescriptions).length > 0) {
+          lines.push('\n**[Avatar Photos — Visual Analysis (AI-Analyzed):]:**');
+          if (avatarDescriptions.main)    lines.push('Character Main Photo-ல் பார்க்குறது: ' + avatarDescriptions.main);
+          if (avatarDescriptions.normal)  lines.push('Character Normal Mode Photo: ' + avatarDescriptions.normal);
+          if (avatarDescriptions.presana) lines.push('Character Presana Mode Photo: ' + avatarDescriptions.presana);
+          if (avatarDescriptions.user)    lines.push('User-ஓட Photo-ல் பார்க்குறது (இதன் படி user-ஐ describe பண்ணு): ' + avatarDescriptions.user);
+        }
+
         // User Image 2: new user behavior fields (added in edit-character page)
         const uWh = userWhatsappBeh.trim();
         const uNm = userNormalBeh.trim();
@@ -776,6 +822,12 @@ export default function ChatScreen() {
           if (uNm) lines.push(`User Normal mode-ல்: ${uNm}`);
           if (uPr) lines.push(`User Presana mode-ல்: ${uPr}`);
           lines.push('இந்த details பார்த்து, current mode-க்கு ஏத்த மாதிரி react பண்ணு.');
+        }
+
+        // Avatar Reflection instruction (editable via edit-character)
+        if (avatarReflectionEnabled) {
+          const DEFAULT_REFL = 'யூசர் avatar-ல் பார்க்குற தோற்றம் (முடி நீளம்/நிறம், முகம், சருமம், உடல்வாகு, உடை) conversation-ல் naturally mention பண்ணு.\nயூசர் தோற்றம் பத்தி கேட்டால் avatar-ல் பார்த்தது போல் full detail-ஆ respond பண்ணு.\nCharacter-ஓட own photos-ல் பார்க்குற appearance feel பண்ணி பேசு.\nExample: user photo-ல் நீள முடி இருந்தால் — "உன் நீள முடி அழகா இருக்கு, எப்படி maintain பண்ற?" மாதிரி naturally கேளு.';
+          lines.push('\n**[Avatar Reflection — எப்பவும் கடைபிடிக்கணும்]:**\n' + (avatarReflectionPrompt.trim() || DEFAULT_REFL));
         }
 
         return lines.length > 1 ? lines.join('\n') : '';
