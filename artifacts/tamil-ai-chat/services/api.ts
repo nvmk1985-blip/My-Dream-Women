@@ -42,6 +42,7 @@ export interface Message {
   timestamp: Date;
   imageUrl?: string;
   imageLoading?: boolean;
+  videoUrl?: string;
   galleryUrls?: string[];
   galleryLabel?: string;
 }
