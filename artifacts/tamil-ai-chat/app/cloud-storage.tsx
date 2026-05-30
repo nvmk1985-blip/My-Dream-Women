@@ -494,12 +494,7 @@ export default function CloudStorageScreen() {
 
         <Text style={styles.sectionLabel}>STORAGE</Text>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.catScroll}
-          contentContainerStyle={styles.catRow}
-        >
+        <View style={styles.catWrap}>
           {categoryCounts.map(cat => (
             <TouchableOpacity
               key={cat.key}
@@ -517,7 +512,7 @@ export default function CloudStorageScreen() {
               )}
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
 
         <View style={styles.storageInfo}>
           <Text style={styles.storageTitle}>
@@ -952,10 +947,13 @@ const styles = StyleSheet.create({
     color: '#aaa', fontSize: 11, fontWeight: '700', letterSpacing: 1.5,
     paddingHorizontal: 16, paddingTop: 18, paddingBottom: 10,
   },
-  catScroll: { marginBottom: 4 },
-  catRow: { paddingHorizontal: 12, gap: 10, paddingBottom: 8 },
+  catWrap: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    paddingHorizontal: 12, gap: 8, marginBottom: 8,
+  },
   catCard: {
-    width: 80, alignItems: 'center', paddingVertical: 14, paddingHorizontal: 8,
+    width: (width - 56) / 3,
+    alignItems: 'center', paddingVertical: 14, paddingHorizontal: 4,
     backgroundColor: '#16213e', borderRadius: 16, borderWidth: 1.5, borderColor: '#2a2a4a',
   },
   catCardActive: { borderColor: '#6C63FF', backgroundColor: '#2d2b55' },
