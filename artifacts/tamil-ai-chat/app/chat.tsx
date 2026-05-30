@@ -1182,13 +1182,25 @@ export default function ChatScreen() {
             <Text selectable style={[styles.msgText, { color: msgTextColor }]}>{item.content}</Text>
           )}
           {item.videoUrl && (
-            <TouchableOpacity
-              style={{ width: 220, height: 140, backgroundColor: '#111', borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginBottom: 6, overflow: 'hidden' }}
-              onPress={() => { const { Linking } = require('react-native'); Linking.openURL(item.videoUrl!); }}
-            >
-              <Text style={{ fontSize: 44 }}>▶️</Text>
-              <Text style={{ color: '#fff', fontSize: 11, marginTop: 4 }}>Tap to play video</Text>
-            </TouchableOpacity>
+            <View style={{ marginBottom: 6 }}>
+              <TouchableOpacity
+                style={{ width: 220, height: 140, backgroundColor: '#1a1a2e', borderRadius: 10, justifyContent: 'center', alignItems: 'center', overflow: 'hidden', borderWidth: 2, borderColor: '#6C63FF' }}
+                onPress={() => { const { Linking } = require('react-native'); Linking.openURL(item.videoUrl!); }}
+              >
+                <Text style={{ fontSize: 48 }}>▶️</Text>
+                <Text style={{ color: '#aaa', fontSize: 11, marginTop: 6 }}>🎬 Tap to play video</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ marginTop: 4, backgroundColor: 'rgba(198,40,40,0.12)', borderRadius: 8, paddingVertical: 5, paddingHorizontal: 10, alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                onPress={() => Alert.alert('Video Delete?', 'இந்த video message delete ஆகும்', [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: '🗑️ Delete', style: 'destructive', onPress: () => deleteMsg(item.id) },
+                ])}
+              >
+                <Text style={{ fontSize: 12 }}>🗑️</Text>
+                <Text style={{ color: '#c62828', fontSize: 11, fontWeight: '700' }}>Delete</Text>
+              </TouchableOpacity>
+            </View>
           )}
           <Text style={[styles.timeText, { color: timeTextColor }]}>
             {item.timestamp.toLocaleTimeString('ta-IN', { hour: '2-digit', minute: '2-digit' })}
