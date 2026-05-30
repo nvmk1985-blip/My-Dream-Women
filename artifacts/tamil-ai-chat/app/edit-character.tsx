@@ -52,6 +52,8 @@ export default function EditCharacterScreen() {
   // Section B expand state
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [basePromptEdit, setBasePromptEdit] = useState('');
+  const [avatarReflectionEnabled, setAvatarReflectionEnabled] = useState(true);
+  const [avatarReflectionPrompt, setAvatarReflectionPrompt] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -85,6 +87,8 @@ export default function EditCharacterScreen() {
         setUserPresanaBeh(data.userPresanaBeh ?? '');
         setUserBodyDesc(data.userBodyDesc ?? '');
         setBasePromptEdit(data.basePromptEdit ?? BASE_PROMPT);
+        setAvatarReflectionEnabled(data.avatarReflectionEnabled !== false);
+        setAvatarReflectionPrompt(data.avatarReflectionPrompt ?? '');
       } catch {}
     };
     load();
@@ -102,11 +106,13 @@ export default function EditCharacterScreen() {
     setSaving(true);
     try {
       const data = {
-        name, avatarLetter, greeting, prompt: BASE_PROMPT + '\n**இப்போ உன்னோட character:**\n' + charOnly,
+        name, avatarLetter, greeting, prompt: (basePromptEdit.trim() || BASE_PROMPT) + '\n**இப்போ உன்னோட character:**\n' + charOnly,
         faceDesc, bodyDesc, attireDesc, avatarPhotoUri,
         normalAvatarUri, presanaAvatarUri, relationship,
         presanaBehaviour, normalBehaviour,
         userWhatsappBeh, userNormalBeh, userPresanaBeh, userBodyDesc,
+        basePromptEdit: basePromptEdit.trim() || BASE_PROMPT,
+        avatarReflectionEnabled, avatarReflectionPrompt,
       };
       await AsyncStorage.setItem(`persona_edit_${persona.id}`, JSON.stringify(data));
       Alert.alert('Saved', `${name} character update ஆச்சு!`);
@@ -399,6 +405,52 @@ export default function EditCharacterScreen() {
             placeholder="e.g. User 30 வயது, medium height, athletic build, dark skin. Character இதை அறிஞ்சு interact பண்ணும்."
             placeholderTextColor="#bbb"
           />
+        </View>
+
+        {/* ══════════════════════════════════════════
+            🖼️ AVATAR REFLECTION
+        ══════════════════════════════════════════ */}
+        <View style={styles.card}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={[styles.sectionLabel, { color: '#6C63FF', marginBottom: 3 }]}>🖼️ AVATAR REFLECTION</Text>
+              <Text style={{ color: '#888', fontSize: 11, lineHeight: 17 }}>
+                {'Avatar photos-ல் பார்க்குற தோற்றம் (முடி நீளம்/நிறம், முகம், உடல்வாகு) chat conversation-ல் naturally reflect ஆகும். AI photo-ஐ Gemini-ல் analyze பண்ணி character conversation-ல் mention பண்ணும்.'}
+              </Text>
+            </View>
+            <Switch
+              value={avatarReflectionEnabled}
+              onValueChange={setAvatarReflectionEnabled}
+              trackColor={{ false: '#ddd', true: '#6C63FF' }}
+              thumbColor="#fff"
+            />
+          </View>
+          {avatarReflectionEnabled && (
+            <View>
+              <Text style={[styles.sectionLabel, { color: '#6C63FF', marginTop: 8, marginBottom: 4 }]}>✏️ Reflection Instruction (திருத்தலாம்)</Text>
+              <Text style={{ color: '#aaa', fontSize: 10, marginBottom: 6 }}>
+                {'Empty-ஆ விட்டால் default instruction use ஆகும். Custom instruction போட்டால் அது use ஆகும்.'}
+              </Text>
+              <TextInput
+                style={[styles.fieldInput, { minHeight: 120, fontSize: 12, lineHeight: 18 }]}
+                value={avatarReflectionPrompt}
+                onChangeText={setAvatarReflectionPrompt}
+                multiline
+                textAlignVertical="top"
+                placeholder={'யூசர் avatar-ல் பார்க்குற தோற்றம் (முடி நீளம்/நிறம், முகம், சருமம்) conversation-ல் naturally mention பண்ணு.
+யூசர் தோற்றம் பத்தி கேட்டால் avatar-ல் பார்த்தது போல் full detail-ஆ respond பண்ணு.
+Character-ஓட own photos-ல் பார்க்குற appearance feel பண்ணி பேசு.
+Example: நீள முடி user → "உன் நீள முடி அழகா இருக்கு, எப்படி maintain பண்ற?"'}
+                placeholderTextColor="#bbb"
+              />
+              <TouchableOpacity
+                onPress={() => setAvatarReflectionPrompt('')}
+                style={{ marginTop: 8, paddingVertical: 7, paddingHorizontal: 14, backgroundColor: '#ede9ff', borderRadius: 10, alignSelf: 'flex-start' }}
+              >
+                <Text style={{ color: '#6C63FF', fontSize: 11, fontWeight: '600' }}>↺ Default-க்கு Reset</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* MOOD / BEHAVIOUR — visible */}
