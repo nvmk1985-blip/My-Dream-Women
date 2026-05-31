@@ -79,6 +79,37 @@ async function getRotatingGeminiKey(): Promise<string | undefined> {
   } catch { return undefined; }
 }
 
+// ── Image → Prompt (Photo to Script) ──────────────────────────
+// Passes user's active Gemini key to the Render server via headers.
+// Fixes: relative URL (/api/...) fails on Android APK; Render has no Replit proxy keys.
+export async function imageToPrompt(imageUrl: string): Promise<string> {
+  const geminiKey = await getRotatingGeminiKey();
+  const AS = (await import('@react-native-async-storage/async-storage')).default;
+  const keysRaw = await AS.getItem('api_keys_store').catch(() => null);
+  const keysMap = keysRaw ? (JSON.parse(keysRaw) as Record<string, string>) : {};
+  const openrouterKey = keysMap['openrouter']?.trim() || '';
+  const hdrs: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (geminiKey) hdrs['x-gemini-key'] = geminiKey;
+  if (openrouterKey) hdrs['x-openrouter-key'] = openrouterKey;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+  try {
+    const res = await fetch(`${REPLIT_API}/api/image-to-prompt`, {
+      method: 'POST',
+      headers: hdrs,
+      body: JSON.stringify({ image_url: imageUrl }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const data = (await res.json()) as any;
+    if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+    return data?.prompt ?? '';
+  } catch (e: any) {
+    clearTimeout(timer);
+    throw new Error(e?.message || 'Generate ஆகல. மீண்டும் try பண்ணுங்க.');
+  }
+}
+
 export async function sendMessage(
   messages: { role: string; content: string }[],
   _provider: string = 'gemini',
