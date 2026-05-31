@@ -340,6 +340,9 @@ export default function ChatScreen() {
   const [dialectMode, setDialectMode] = useState(true);
   // Mood: 'presana' (default flirty) | 'normal' (clean friendly)
   const [moodMode, setMoodMode] = useState<'presana' | 'normal' | 'whatsapp'>('presana');
+  const [kiruthikaUserDetails, setKiruthikaUserDetails] = useState('');
+  const [showKiruthikaDetails, setShowKiruthikaDetails] = useState(false);
+  const [kiruthikaDetailsDraft, setKiruthikaDetailsDraft] = useState('');
   const [presanaBehaviour, setPresanaBehaviour] = useState('');
   const [normalBehaviour, setNormalBehaviour] = useState('');
   const [userWhatsappBeh, setUserWhatsappBeh] = useState('');
@@ -482,6 +485,38 @@ export default function ChatScreen() {
     }).catch(() => {});
   }, [personaId]);
 
+  // ── Kiruthika: 2-day persistent chat memory + user personal details ──
+  useEffect(() => {
+    if (personaId !== 'kiruthika') return;
+    AsyncStorage.multiGet(['kiruthika_persistent_history', 'kiruthika_user_details']).then(pairs => {
+      if (pairs[1][1]) setKiruthikaUserDetails(pairs[1][1]);
+      if (pairs[0][1]) {
+        try {
+          const hist = JSON.parse(pairs[0][1]) as Array<{role: string; content: string; ts?: number}>;
+          const cutoff = Date.now() - 48 * 60 * 60 * 1000; // 48 hours
+          const recent = hist.filter(m => !m.ts || m.ts > cutoff);
+          if (recent.length > 0) {
+            setMessages(recent.map((m, i) => ({
+              id: `kh_${i}_${m.ts || i}`,
+              role: m.role as 'user' | 'assistant',
+              content: m.content,
+              timestamp: new Date(m.ts || Date.now()),
+            })));
+          }
+        } catch {}
+      }
+    }).catch(() => {});
+  }, [personaId]);
+
+  // ── Kiruthika mode guard: reset presana → first allowed mode ──
+  useEffect(() => {
+    const allowedModes = (persona as any)?.modes as Array<'presana' | 'normal' | 'whatsapp'> | undefined;
+    if (allowedModes?.length && !allowedModes.includes(moodMode)) {
+      setMoodMode(allowedModes[0]);
+      if (personaId) AsyncStorage.setItem(`mood_mode_${personaId}`, allowedModes[0]).catch(() => {});
+    }
+  }, [(persona as any)?.id]);
+
   const toggleDialect = async () => {
     const next = !dialectMode;
     setDialectMode(next);
@@ -489,8 +524,15 @@ export default function ChatScreen() {
   };
 
   const toggleMood = async () => {
-    const next = moodMode === 'presana' ? 'normal' : moodMode === 'normal' ? 'whatsapp' : 'presana';
-    setMoodMode(next as 'presana' | 'normal' | 'whatsapp');
+    const allowedModes = (persona as any)?.modes as Array<'presana' | 'normal' | 'whatsapp'> | undefined;
+    let next: 'presana' | 'normal' | 'whatsapp';
+    if (allowedModes?.length) {
+      const idx = allowedModes.indexOf(moodMode);
+      next = allowedModes[(idx < 0 ? 0 : idx + 1) % allowedModes.length];
+    } else {
+      next = moodMode === 'presana' ? 'normal' : moodMode === 'normal' ? 'whatsapp' : 'presana';
+    }
+    setMoodMode(next);
     if (personaId) await AsyncStorage.setItem(`mood_mode_${personaId}`, next);
   };
 
@@ -847,8 +889,11 @@ export default function ChatScreen() {
         normalBehaviour || '',
       );
 
+      const kiruthikaContext = (personaId === 'kiruthika' && kiruthikaUserDetails.trim())
+        ? `\n\n**[User-ஓட personal details — எப்பவும் நினைவில் வச்சு பேசு]:**\n${kiruthikaUserDetails.trim()}`
+        : '';
       const effectivePrompt = persona?.prompt
-        ? persona.prompt + charContext + getFamilyContext(persona.id) + imageContext + moodOverride + dialectOverride + userContext + avatarContext
+        ? persona.prompt + charContext + getFamilyContext(persona.id) + imageContext + moodOverride + dialectOverride + userContext + avatarContext + kiruthikaContext
         : persona?.prompt;
 
       let reply: string;
@@ -872,10 +917,17 @@ export default function ChatScreen() {
         }
       }
 
-      setMessages(prev => [
-        ...prev,
-        { id: (Date.now() + 1).toString(), role: 'assistant', content: reply, timestamp: new Date() },
-      ]);
+      setMessages(prev => {
+        const aiMsg = { id: (Date.now() + 1).toString(), role: 'assistant' as const, content: reply, timestamp: new Date() };
+        const updated = [...prev, aiMsg];
+        // Kiruthika 2-day persistent memory: save every message exchange to AsyncStorage
+        if (personaId === 'kiruthika') {
+          const ts = Date.now();
+          const toSave = updated.map(m => ({ role: m.role, content: m.content, ts }));
+          AsyncStorage.setItem('kiruthika_persistent_history', JSON.stringify(toSave)).catch(() => {});
+        }
+        return updated;
+      });
     } catch (err: any) {
       const errMsg: string = err?.message ?? '';
       const low = errMsg.toLowerCase();
@@ -902,7 +954,7 @@ export default function ChatScreen() {
       setLoading(false);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     }
-  }, [input, loading, messages, provider, persona, isOnline, localGemmaPort, moodMode, presanaBehaviour, normalBehaviour, dialectMode, userName, userBehaviour, reloadPersona]);
+  }, [input, loading, messages, provider, persona, isOnline, localGemmaPort, moodMode, presanaBehaviour, normalBehaviour, dialectMode, userName, userBehaviour, reloadPersona, kiruthikaUserDetails]);
 
   const handleShowGalleryInChat = async (styleId: string) => {
     if (!persona) return;
