@@ -751,13 +751,26 @@ export default function ChatScreen() {
       setInput('');
       setVideoLoading(true);
       try {
-        const videos = await listCloudinaryVideos(persona.name);
-        if (videos.length > 0) {
+        // 1. Try Cloudinary server first
+        let videos = await listCloudinaryVideos(persona.name).catch(() => []);
+
+        // 2. Fallback: local AsyncStorage (handles Tamil folder name issues)
+        if (!videos || videos.length === 0) {
+          try {
+            const LOCAL_VIDEO_KEY = 'my_girls_cloud_videos';
+            const raw = await AsyncStorage.getItem(LOCAL_VIDEO_KEY);
+            const all: Array<{ url: string; public_id: string; personaName?: string }> = raw ? JSON.parse(raw) : [];
+            const local = all.filter(v => v.personaName === persona.name);
+            if (local.length > 0) videos = local;
+          } catch {}
+        }
+
+        if (videos && videos.length > 0) {
           const idxKey = `video_idx_${persona.id}`;
           const savedIdx = await AsyncStorage.getItem(idxKey).catch(() => null);
           const idx = savedIdx ? (parseInt(savedIdx, 10) + 1) % videos.length : 0;
           await AsyncStorage.setItem(idxKey, idx.toString());
-          const vid = videos[idx];
+          const vid = (videos as any[])[idx];
           const videoMsg: Message = { id: (Date.now()+1).toString(), role: 'assistant', content: '🎬 இதோ!', timestamp: new Date(), videoUrl: vid.url };
           setMessages(prev => [...prev, videoMsg]);
         } else {
