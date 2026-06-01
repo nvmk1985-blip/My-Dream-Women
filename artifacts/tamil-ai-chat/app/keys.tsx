@@ -34,6 +34,7 @@ const DEFAULT_KEYS: Omit<ApiKeyEntry, 'value' | 'expanded' | 'status'>[] = [
   { id: 'openrouter',  label: 'OpenRouter API', site: 'openrouter.ai',     enabled: false },
   { id: 'fal',         label: 'FAL AI',          site: 'fal.ai',            enabled: false },
   { id: 'aifaceswap',  label: 'AI FaceSwap',     site: 'aifaceswap.ai',     enabled: false },
+  { id: 'img_prompt_gemini', label: '📸 Image to Prompt', site: 'aistudio.google.com', enabled: false },
 ];
 
 // ── Key testers ──────────────────────────────────────────────────
@@ -78,7 +79,7 @@ async function testOpenRouterKey(key: string): Promise<KeyStatus> {
 
 async function testKey(id: string, value: string): Promise<KeyStatus> {
   if (!value.trim()) return 'idle';
-  if (id.startsWith('gemini')) return testGeminiKey(value);
+  if (id.startsWith('gemini') || id === 'img_prompt_gemini') return testGeminiKey(value);
   if (id === 'hf') return testHuggingFaceKey(value);
   if (id === 'groq') return testGroqKey(value);
   if (id === 'openrouter') return testOpenRouterKey(value);
