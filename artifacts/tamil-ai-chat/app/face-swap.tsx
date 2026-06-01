@@ -76,7 +76,7 @@ export default function FaceSwapScreen() {
 
       const res = await fetch(`${API_BASE}/api/face-swap`, {
         method: 'POST', headers: hdrs,
-        body: JSON.stringify({ target_url: targetB64, face_url: faceB64 }),
+        body: JSON.stringify({ target_url: targetB64, source_url: faceB64 }),
       });
       const data = await res.json() as any;
       if (!res.ok || !data.jobId) throw new Error(data.error || 'Start failed');
@@ -204,3 +204,4 @@ const s = StyleSheet.create({
   saveBtn: { backgroundColor: '#1d4ed8', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 12 },
   saveBtnTxt: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });
+
