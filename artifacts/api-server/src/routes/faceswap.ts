@@ -22,7 +22,7 @@ function upd(jobId: string, data: Partial<Job>) {
   if (j) jobs.set(jobId, { ...j, ...data });
 }
 
-router.get("/face-swap/ping", (_req, res) => res.json({ status: "ok" }));
+router.get("/face-swap/ping", (_req, res) => res.json({ status: "ok", provider: "HuggingFace free" }));
 
 router.get("/face-swap/result/:jobId", (req, res) => {
   const job = jobs.get(req.params.jobId);
@@ -32,12 +32,9 @@ router.get("/face-swap/result/:jobId", (req, res) => {
 
 router.post("/face-swap", async (req, res) => {
   const body = req.body as Record<string, string>;
-  // x-hf-token: user's HuggingFace API token for authenticated space access
   const hfToken = (req.headers["x-hf-token"] as string)?.trim() || undefined;
 
-  // Accept both naming conventions:
-  // New (face-swap.tsx v2): { target_url: where-face-goes, face_url: source-face }
-  // Old (legacy):           { source_url: where-face-goes, target_url: source-face }
+  // Accept both naming conventions
   const targetImg = body.target_url && body.face_url ? body.target_url : (body.source_url || body.target_url);
   const faceImg   = body.face_url || body.target_url;
 
@@ -65,7 +62,6 @@ async function dataUriToBlob(url: string): Promise<Blob> {
   return new Blob([buf], { type: r.headers.get("content-type") || "image/jpeg" });
 }
 
-// Try a Gradio space using @gradio/client SDK
 async function tryGradioSpace(
   spaceName: string,
   faceBlob: Blob,
@@ -80,7 +76,6 @@ async function tryGradioSpace(
     const opts: any = {};
     if (hfToken) opts.hf_token = hfToken;
     const client = await Client.connect(spaceName, opts);
-    // tonyassi/face-swap expects [source_face_blob, target_image_blob]
     const result = await client.predict("/predict", [faceBlob, targetBlob]) as any;
     const out = result?.data?.[0];
     if (!out) return null;
@@ -95,7 +90,6 @@ async function tryGradioSpace(
   return Promise.race([run, timer]);
 }
 
-// Fallback: raw REST for spaces that still support /run/predict
 async function tryRestSpace(
   spaceHost: string,
   faceB64: string,
@@ -122,13 +116,11 @@ async function tryRestSpace(
 
 async function processSwap(jobId: string, targetUrl: string, faceUrl: string, hfToken?: string) {
   try {
-    // Both images come as base64 data URIs from mobile app (no external URL fetching!)
     const [faceBlob, targetBlob] = await Promise.all([
       dataUriToBlob(faceUrl),
       dataUriToBlob(targetUrl),
     ]);
 
-    // Convert to base64 for REST fallback
     const faceB64 = await faceBlob.arrayBuffer().then(b => Buffer.from(b).toString("base64"));
     const targetB64 = await targetBlob.arrayBuffer().then(b => Buffer.from(b).toString("base64"));
     const faceMime = (faceBlob.type || "image/jpeg");
@@ -138,32 +130,27 @@ async function processSwap(jobId: string, targetUrl: string, faceUrl: string, hf
 
     let resultUrl: string | null = null;
 
-    // 1. tonyassi/face-swap (most reliable free HF space, insightface)
-    if (!resultUrl) {
+    const spaces = [
+      "tonyassi/face-swap",
+      "Dentro/face-swap",
+      "felixrosberg/face-swap",
+    ];
+
+    for (const space of spaces) {
+      if (resultUrl) break;
       try {
-        resultUrl = await tryGradioSpace("tonyassi/face-swap", faceBlob, targetBlob, 120000, hfToken);
-      } catch (e: any) { console.error("[faceswap] tonyassi failed:", e?.message?.slice(0, 100)); }
+        resultUrl = await tryGradioSpace(space, faceBlob, targetBlob, 120000, hfToken);
+      } catch (e: any) {
+        console.error(`[faceswap] ${space} failed:`, e?.message?.slice(0, 100));
+      }
     }
 
-    // 2. Dentro/face-swap
-    if (!resultUrl) {
-      try {
-        resultUrl = await tryGradioSpace("Dentro/face-swap", faceBlob, targetBlob, 90000, hfToken);
-      } catch (e: any) { console.error("[faceswap] Dentro failed:", e?.message?.slice(0, 100)); }
-    }
-
-    // 3. felixrosberg/face-swap
-    if (!resultUrl) {
-      try {
-        resultUrl = await tryGradioSpace("felixrosberg/face-swap", faceBlob, targetBlob, 90000, hfToken);
-      } catch (e: any) { console.error("[faceswap] felixrosberg failed:", e?.message?.slice(0, 100)); }
-    }
-
-    // 4. Raw REST fallback (blackhool roop)
     if (!resultUrl) {
       try {
         resultUrl = await tryRestSpace("blackhool-roop-face-swap", faceDataUri, targetDataUri, hfToken);
-      } catch (e: any) { console.error("[faceswap] blackhool REST failed:", e?.message?.slice(0, 100)); }
+      } catch (e: any) {
+        console.error("[faceswap] blackhool REST failed:", e?.message?.slice(0, 100));
+      }
     }
 
     if (resultUrl) {
@@ -171,7 +158,7 @@ async function processSwap(jobId: string, targetUrl: string, faceUrl: string, hf
     } else {
       upd(jobId, {
         status: "error",
-        error: "Face swap இப்போது கிடைக்கவில்லை. HuggingFace spaces sleeping ஆகியிருக்கலாம். சில நிமிடம் கழித்து மீண்டும் try பண்ணுங்க.",
+        error: "Face swap இப்போது கிடைக்கவில்லை. HuggingFace spaces busy ஆகியிருக்கலாம். சில நிமிடம் கழித்து மீண்டும் try பண்ணுங்க.",
       });
     }
   } catch (err: any) {
