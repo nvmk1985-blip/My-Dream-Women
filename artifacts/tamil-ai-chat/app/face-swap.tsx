@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Image, Alert, ActivityIndicator, ScrollView, Dimensions, StatusBar, Switch,
+  Image, Alert, ActivityIndicator, ScrollView, Dimensions, StatusBar, Switch, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
@@ -14,6 +14,58 @@ const { width } = Dimensions.get('window');
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+// ── Progress Bar Component ────────────────────────────────────────────────────
+function ProgressBar({ progress, statusMsg }: { progress: number; statusMsg: string }) {
+  const clampedProgress = Math.min(100, Math.max(0, progress));
+  return (
+    <View style={pb.container}>
+      <View style={pb.row}>
+        <Text style={pb.statusTxt} numberOfLines={2}>{statusMsg}</Text>
+        <Text style={pb.pct}>{Math.round(clampedProgress)}%</Text>
+      </View>
+      <View style={pb.track}>
+        <View style={[pb.fill, { width: `${clampedProgress}%` }]} />
+      </View>
+      <View style={pb.stepsRow}>
+        {['Connecting', 'Processing', 'Enhancing', 'Done'].map((label, i) => {
+          const stepPct = [0, 40, 75, 98][i];
+          const active = clampedProgress >= stepPct;
+          return (
+            <View key={label} style={pb.step}>
+              <View style={[pb.dot, active && pb.dotActive]} />
+              <Text style={[pb.stepLabel, active && pb.stepLabelActive]}>{label}</Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+const pb = StyleSheet.create({
+  container: {
+    backgroundColor: '#12103a', borderRadius: 14, padding: 14,
+    marginBottom: 12, borderWidth: 1, borderColor: '#7c3aed55',
+  },
+  row: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, gap: 8 },
+  statusTxt: { color: '#c4b5fd', fontSize: 12, flex: 1, lineHeight: 18 },
+  pct: { color: '#fff', fontSize: 22, fontWeight: '900', minWidth: 50, textAlign: 'right' },
+  track: {
+    height: 10, borderRadius: 6, backgroundColor: '#1e1b4b',
+    overflow: 'hidden', marginBottom: 12,
+  },
+  fill: {
+    height: '100%', borderRadius: 6,
+    backgroundColor: '#7c3aed',
+  },
+  stepsRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  step: { alignItems: 'center', gap: 4 },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#333' },
+  dotActive: { backgroundColor: '#7c3aed' },
+  stepLabel: { color: '#555', fontSize: 9, fontWeight: '600' },
+  stepLabelActive: { color: '#a78bfa' },
+});
+
 // ── HuggingFace Space Gradio helper ──────────────────────────────────────────
 async function callGradioSpace(
   host: string,
@@ -22,6 +74,7 @@ async function callGradioSpace(
   hfToken?: string,
   timeoutMs = 180000,
   onStatus?: (msg: string) => void,
+  onProgress?: (pct: number) => void,
 ): Promise<string | null> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (hfToken) headers['Authorization'] = `Bearer ${hfToken}`;
@@ -29,7 +82,8 @@ async function callGradioSpace(
   const MAX_ATTEMPTS = 4;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
-      // Submit job
+      onProgress?.(5 + attempt * 2);
+
       let submitRes: Response;
       try {
         submitRes = await fetch(
@@ -39,15 +93,16 @@ async function callGradioSpace(
       } catch {
         if (attempt < MAX_ATTEMPTS - 1) {
           onStatus?.('Preparing AI...');
+          onProgress?.(8);
           await sleep(5000);
           continue;
         }
         return null;
       }
 
-      // Space sleeping / cold-start — wake it up and retry
       if (submitRes.status === 503 || submitRes.status === 502) {
         onStatus?.('Waking up AI server...');
+        onProgress?.(10);
         await sleep(10000);
         continue;
       }
@@ -58,7 +113,9 @@ async function callGradioSpace(
       const eventId = submitJson?.event_id;
       if (!eventId) return null;
 
-      // Poll SSE result with retry on loading/queue events
+      onProgress?.(15);
+
+      // Poll SSE result
       let pollAttempts = 0;
       while (pollAttempts < 6) {
         pollAttempts++;
@@ -70,6 +127,7 @@ async function callGradioSpace(
           );
         } catch {
           onStatus?.('Processing image...');
+          onProgress?.(20 + pollAttempts * 5);
           await sleep(5000);
           continue;
         }
@@ -77,6 +135,7 @@ async function callGradioSpace(
         if (!pollRes.ok) {
           if (pollRes.status === 503) {
             onStatus?.('AI model is starting. This may take 1-3 minutes.');
+            onProgress?.(18);
             await sleep(10000);
             continue;
           }
@@ -89,7 +148,39 @@ async function callGradioSpace(
         let shouldRetry = false;
 
         for (let i = 0; i < lines.length; i++) {
+          // Queue status — extract rank for progress
+          if (lines[i].startsWith('event: queue_full') || lines[i].includes('queue_position')) {
+            onStatus?.('AI server is busy. Waiting in queue...');
+            onProgress?.(20);
+            shouldRetry = true;
+            break;
+          }
+          // Process generating — extract Gradio progress if available
+          if (lines[i].startsWith('event: process_generating')) {
+            const dl = lines[i + 1] || '';
+            if (dl.startsWith('data: ')) {
+              try {
+                const genData: any = JSON.parse(dl.slice(6));
+                if (genData?.progress_data?.length > 0) {
+                  const p = genData.progress_data[0];
+                  const pct = p?.index && p?.length
+                    ? 20 + Math.round((p.index / p.length) * 50)
+                    : 35;
+                  onProgress?.(pct);
+                  onStatus?.('Generating result...');
+                } else {
+                  onProgress?.(35);
+                  onStatus?.('Generating result...');
+                }
+              } catch { onProgress?.(35); }
+            }
+          }
+          if (lines[i].startsWith('event: process_starts')) {
+            onStatus?.('Generating result...');
+            onProgress?.(25);
+          }
           if (lines[i].startsWith('event: complete')) {
+            onProgress?.(70);
             const dl = lines[i + 1] || '';
             if (dl.startsWith('data: ')) {
               try { resultData = JSON.parse(dl.slice(6)); } catch { }
@@ -99,28 +190,16 @@ async function callGradioSpace(
           if (lines[i].startsWith('event: error')) {
             const errLine = lines[i + 1] || '';
             const errText = errLine.toLowerCase();
-            // Model loading or queue — wait and retry
             if (
-              errText.includes('loading') ||
-              errText.includes('queue') ||
-              errText.includes('cold') ||
-              errText.includes('starting') ||
+              errText.includes('loading') || errText.includes('queue') ||
+              errText.includes('cold') || errText.includes('starting') ||
               errText.includes('busy')
             ) {
               onStatus?.('AI server is busy. Waiting in queue...');
+              onProgress?.(20);
               shouldRetry = true;
             }
             break;
-          }
-          // Queue position event
-          if (lines[i].startsWith('event: queue_full') || lines[i].includes('queue_position')) {
-            onStatus?.('AI server is busy. Waiting in queue...');
-            shouldRetry = true;
-            break;
-          }
-          // Heartbeat / status events
-          if (lines[i].startsWith('event: process_starts')) {
-            onStatus?.('Generating result...');
           }
         }
 
@@ -142,6 +221,7 @@ async function callGradioSpace(
     } catch {
       if (attempt < MAX_ATTEMPTS - 1) {
         onStatus?.('Preparing AI...');
+        onProgress?.(8);
         await sleep(5000);
       }
     }
@@ -153,7 +233,6 @@ function imgObj(dataUri: string) {
   return { url: dataUri, meta: { _type: 'gradio.FileData' } };
 }
 
-// ── FACE SWAP ENGINE — InsightFace/InSwapper128 + GFPGAN + Real-ESRGAN ───────
 const SWAP_SPACES = [
   {
     label: 'ReActor (InsightFace + InSwapper128 + CodeFormer)',
@@ -193,7 +272,6 @@ const SWAP_SPACES = [
   },
 ];
 
-// GFPGAN face restoration
 async function enhanceWithGFPGAN(imgDataUri: string, hfToken?: string): Promise<string | null> {
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -213,13 +291,13 @@ async function enhanceWithGFPGAN(imgDataUri: string, hfToken?: string): Promise<
     if (!poll.ok) return null;
     const txt = await poll.text();
     const lines = txt.split('\n');
-    for (let i=0;i<lines.length;i++) {
+    for (let i = 0; i < lines.length; i++) {
       if (lines[i].startsWith('event: complete')) {
-        const dl = lines[i+1]||''; if (!dl.startsWith('data: ')) break;
+        const dl = lines[i + 1] || ''; if (!dl.startsWith('data: ')) break;
         const rd: any = JSON.parse(dl.slice(6));
-        const f = Array.isArray(rd)?rd[0]:rd;
+        const f = Array.isArray(rd) ? rd[0] : rd;
         if (!f) break;
-        if (typeof f==='string') return f;
+        if (typeof f === 'string') return f;
         if (f?.url) return f.url;
         if (f?.path) return `https://Xintao-GFPGAN.hf.space/gradio_api/file=${f.path}`;
         break;
@@ -229,12 +307,8 @@ async function enhanceWithGFPGAN(imgDataUri: string, hfToken?: string): Promise<
   return null;
 }
 
-// Real-ESRGAN 4× upscaling
 async function upscaleWithESRGAN(imgDataUri: string, hfToken?: string): Promise<string | null> {
-  const ESRGAN_SPACES = [
-    'sberbank-ai-Real-ESRGAN',
-    'ai-forever-Real-ESRGAN',
-  ];
+  const ESRGAN_SPACES = ['sberbank-ai-Real-ESRGAN', 'ai-forever-Real-ESRGAN'];
   for (const host of ESRGAN_SPACES) {
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -254,13 +328,13 @@ async function upscaleWithESRGAN(imgDataUri: string, hfToken?: string): Promise<
       if (!poll.ok) continue;
       const txt = await poll.text();
       const lines = txt.split('\n');
-      for (let i=0;i<lines.length;i++) {
+      for (let i = 0; i < lines.length; i++) {
         if (lines[i].startsWith('event: complete')) {
-          const dl = lines[i+1]||''; if (!dl.startsWith('data: ')) break;
+          const dl = lines[i + 1] || ''; if (!dl.startsWith('data: ')) break;
           const rd: any = JSON.parse(dl.slice(6));
-          const f = Array.isArray(rd)?rd[0]:rd;
+          const f = Array.isArray(rd) ? rd[0] : rd;
           if (!f) break;
-          if (typeof f==='string') return f;
+          if (typeof f === 'string') return f;
           if (f?.url) return f.url;
           if (f?.path) return `https://${host}.hf.space/gradio_api/file=${f.path}`;
           break;
@@ -271,7 +345,6 @@ async function upscaleWithESRGAN(imgDataUri: string, hfToken?: string): Promise<
   return null;
 }
 
-// ── Fetch URL → base64 dataURI ────────────────────────────────────────────────
 async function urlToDataUri(url: string): Promise<string | null> {
   try {
     if (url.startsWith('data:')) return url;
@@ -295,6 +368,7 @@ export default function FaceSwapScreen() {
   const [loading, setLoading] = useState(false);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState('');
+  const [progress, setProgress] = useState(0);
   const [usedModel, setUsedModel] = useState('');
   const [enhanceEnabled, setEnhanceEnabled] = useState(true);
 
@@ -328,7 +402,11 @@ export default function FaceSwapScreen() {
     if (!targetB64 || !faceB64) {
       Alert.alert('Images இல்லை', 'இரண்டு photos-ம் select பண்ணுங்க.'); return;
     }
-    setLoading(true); setResultUrl(null); setStatusMsg('Preparing AI...'); setUsedModel('');
+    setLoading(true);
+    setResultUrl(null);
+    setStatusMsg('Preparing AI...');
+    setProgress(2);
+    setUsedModel('');
 
     try {
       const keysRaw = await AsyncStorage.getItem('api_keys_store').catch(() => null);
@@ -338,7 +416,7 @@ export default function FaceSwapScreen() {
       const faceData = imgObj(faceB64);
       const targetData = imgObj(targetB64);
 
-      // ── STEP 1: Face Swap — auto-retry for up to 60 seconds ────────────────
+      // ── STEP 1: Face Swap with auto-retry ──────────────────────────────────
       let swapResult: string | null = null;
       let modelLabel = '';
 
@@ -349,18 +427,20 @@ export default function FaceSwapScreen() {
         for (let i = 0; i < SWAP_SPACES.length; i++) {
           const sp = SWAP_SPACES[i];
           setStatusMsg('Generating...');
+          setProgress(5);
           try {
             const data = sp.buildData(faceData, targetData);
             swapResult = await callGradioSpace(
               sp.host, sp.endpoint, data, hfToken, 180000,
               (msg) => setStatusMsg(msg),
+              (pct) => setProgress(pct),
             );
             if (swapResult) { modelLabel = sp.label; break; }
           } catch { /* try next space */ }
         }
-
         if (!swapResult && Date.now() - retryStart < RETRY_TIMEOUT_MS) {
           setStatusMsg('Preparing AI...');
+          setProgress(8);
           await sleep(5000);
         }
       }
@@ -370,13 +450,14 @@ export default function FaceSwapScreen() {
           'தோல்வி',
           'AI service இப்போது respond ஆகவில்லை.\n\n• Internet connection சரி பார்க்கவும்\n• சில நிமிடம் கழித்து மீண்டும் try பண்ணுங்க\n• Settings-ல் HuggingFace key set பண்ணுங்க (faster)',
         );
-        setStatusMsg(''); return;
+        setStatusMsg(''); setProgress(0); return;
       }
 
-      // ── STEP 2: GFPGAN Face Restoration ────────────────────────────────────
+      // ── STEP 2: GFPGAN Face Restoration (75–85%) ───────────────────────────
       let enhanced = swapResult;
       if (enhanceEnabled) {
-        setStatusMsg('✨ GFPGAN face restoration...');
+        setStatusMsg('✨ Enhancing face quality...');
+        setProgress(75);
         try {
           const dataUri = await urlToDataUri(swapResult);
           if (dataUri) {
@@ -385,8 +466,9 @@ export default function FaceSwapScreen() {
           }
         } catch { /* keep swap result */ }
 
-        // ── STEP 3: Real-ESRGAN 4× Upscaling ──────────────────────────────
-        setStatusMsg('🔬 Real-ESRGAN 4× upscaling...');
+        // ── STEP 3: Real-ESRGAN 4× Upscaling (85–95%) ─────────────────────
+        setStatusMsg('🔬 Upscaling to 4× resolution...');
+        setProgress(85);
         try {
           const dataUri2 = await urlToDataUri(enhanced);
           if (dataUri2) {
@@ -396,12 +478,16 @@ export default function FaceSwapScreen() {
         } catch { /* keep gfpgan result */ }
       }
 
+      setProgress(100);
+      setStatusMsg('✅ Complete!');
+      await sleep(400);
       setResultUrl(enhanced);
       setUsedModel(modelLabel);
       setStatusMsg('');
+      setProgress(0);
     } catch (e: any) {
       Alert.alert('பிழை ❌', e?.message || 'மீண்டும் try பண்ணுங்க.');
-      setStatusMsg('');
+      setStatusMsg(''); setProgress(0);
     } finally {
       setLoading(false);
     }
@@ -444,7 +530,6 @@ export default function FaceSwapScreen() {
         <Text style={s.title}>AI Face Swap</Text>
         <Text style={s.sub}>InsightFace · InSwapper128 · GFPGAN · Real-ESRGAN</Text>
 
-        {/* Engine info */}
         <View style={s.engineCard}>
           <Text style={s.engineTitle}>🚀 Engine Stack</Text>
           <Text style={s.engineLine}>🔍 InsightFace — face detection & landmark</Text>
@@ -453,7 +538,6 @@ export default function FaceSwapScreen() {
           <Text style={s.engineLine}>🔬 Real-ESRGAN — 4× resolution upscale</Text>
         </View>
 
-        {/* Tips */}
         <View style={s.tipCard}>
           <Text style={s.tipTitle}>📸 Best results tips:</Text>
           <Text style={s.tipText}>• முகம் clearly தெரியும் front-facing photos</Text>
@@ -462,7 +546,6 @@ export default function FaceSwapScreen() {
           <Text style={s.tipText}>• Both photos similar face size</Text>
         </View>
 
-        {/* Enhancement toggle */}
         <View style={s.toggleCard}>
           <View style={{ flex: 1 }}>
             <Text style={s.toggleLabel}>✨ GFPGAN + Real-ESRGAN Enhancement</Text>
@@ -508,12 +591,9 @@ export default function FaceSwapScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Status */}
-        {loading && statusMsg ? (
-          <View style={s.statusCard}>
-            <ActivityIndicator color="#7c3aed" size="small" style={{ marginRight: 10 }} />
-            <Text style={s.statusTxt}>{statusMsg}</Text>
-          </View>
+        {/* Progress Bar — shown only while loading */}
+        {loading ? (
+          <ProgressBar progress={progress} statusMsg={statusMsg} />
         ) : null}
 
         {/* Swap button */}
@@ -582,8 +662,6 @@ const s = StyleSheet.create({
   pickedImg: { width: '100%', height: '100%', resizeMode: 'cover' },
   changeBadge: { position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(124,58,237,0.9)', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4 },
   changeTxt: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  statusCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1a1a2e', borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#7c3aed55' },
-  statusTxt: { color: '#a78bfa', fontSize: 12, flex: 1 },
   swapBtn: { backgroundColor: '#7c3aed', borderRadius: 16, paddingVertical: 18, alignItems: 'center', marginTop: 4, elevation: 6, shadowColor: '#7c3aed', shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
   swapBtnOff: { backgroundColor: '#2a2a3a', elevation: 0, shadowOpacity: 0 },
   swapBtnTxt: { color: '#fff', fontSize: 17, fontWeight: '800' },
