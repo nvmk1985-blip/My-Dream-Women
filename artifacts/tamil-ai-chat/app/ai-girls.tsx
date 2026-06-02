@@ -153,6 +153,10 @@ export default function AIGirlsScreen() {
   const [autoUnreads, setAutoUnreads] = useState<Record<string, boolean>>({});
   const [pushStatus, setPushStatus] = useState<'idle' | 'subscribing' | 'active' | 'denied' | 'unsupported'>('idle');
   const [userPhoto, setUserPhoto] = useState<string | null>(null);
+  const [userNormalPhoto, setUserNormalPhoto] = useState<string | null>(null);
+  const [userPrasanaPhoto, setUserPrasanaPhoto] = useState<string | null>(null);
+  const [uploadingUserNormal, setUploadingUserNormal] = useState(false);
+  const [uploadingUserPrasana, setUploadingUserPrasana] = useState(false);
   const [showUserPhotoModal, setShowUserPhotoModal] = useState(false);
   const [userPhotoCloudInput, setUserPhotoCloudInput] = useState('');
   const [uploadingUserPhoto, setUploadingUserPhoto] = useState(false);
@@ -283,6 +287,71 @@ export default function AIGirlsScreen() {
     AsyncStorage.removeItem('user_profile_photo').catch(() => {});
   };
 
+  // Load user normal/prasana photos
+  React.useEffect(() => {
+    AsyncStorage.multiGet(['user_normal_photo', 'user_prasana_photo']).then(pairs => {
+      if (pairs[0][1]) setUserNormalPhoto(pairs[0][1]);
+      if (pairs[1][1]) setUserPrasanaPhoto(pairs[1][1]);
+    }).catch(() => {});
+  }, []);
+
+  // Pick User Normal avatar photo
+  const pickUserNormalPhoto = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.85, allowsEditing: true, aspect: [1, 1],
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      setUploadingUserNormal(true);
+      try {
+        const mime = asset.mimeType || 'image/jpeg';
+        const b64 = asset.base64 ?? await uriToBase64(asset.uri);
+        const { url } = await uploadToCloudinary(b64, mime, 'my-girls/user');
+        setUserNormalPhoto(url);
+        await AsyncStorage.setItem('user_normal_photo', url);
+        // Clear cached profile so it re-analyzes
+        const keys = await AsyncStorage.getAllKeys();
+        const toRemove = keys.filter(k=>k.startsWith('avprofile_usrnorm'));
+        if(toRemove.length) await AsyncStorage.multiRemove(toRemove);
+        Alert.alert('✅ Normal Avatar Saved!', 'Chat-ல் Normal mode-ல் இந்த photo profile use ஆகும்.');
+      } catch {
+        setUserNormalPhoto(asset.uri);
+        await AsyncStorage.setItem('user_normal_photo', asset.uri);
+      } finally { setUploadingUserNormal(false); }
+    }
+  };
+
+  // Pick User Prasana avatar photo
+  const pickUserPrasanaPhoto = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.85, allowsEditing: true, aspect: [1, 1],
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      setUploadingUserPrasana(true);
+      try {
+        const mime = asset.mimeType || 'image/jpeg';
+        const b64 = asset.base64 ?? await uriToBase64(asset.uri);
+        const { url } = await uploadToCloudinary(b64, mime, 'my-girls/user');
+        setUserPrasanaPhoto(url);
+        await AsyncStorage.setItem('user_prasana_photo', url);
+        const keys = await AsyncStorage.getAllKeys();
+        const toRemove = keys.filter(k=>k.startsWith('avprofile_usrpres'));
+        if(toRemove.length) await AsyncStorage.multiRemove(toRemove);
+        Alert.alert('✅ Prasana Avatar Saved!', 'Chat-ல் Prasana mode-ல் இந்த photo profile use ஆகும்.');
+      } catch {
+        setUserPrasanaPhoto(asset.uri);
+        await AsyncStorage.setItem('user_prasana_photo', asset.uri);
+      } finally { setUploadingUserPrasana(false); }
+    }
+  };
+
   const openProfileModal = () => {
     setEditUserName(userName);
     setEditUserBehaviour(userBehaviour);
@@ -311,6 +380,8 @@ export default function AIGirlsScreen() {
         AsyncStorage.getItem('auto_msg_enabled'),
         AsyncStorage.getItem('app_pin'),
         AsyncStorage.getItem('user_profile_photo'),
+        AsyncStorage.getItem('user_normal_photo'),
+        AsyncStorage.getItem('user_prasana_photo'),
         AsyncStorage.getItem('ringtone'),
         AsyncStorage.getItem('user_name'),
         AsyncStorage.getItem('user_behaviour'),
@@ -1030,6 +1101,62 @@ Write a complete Midjourney v6 prompt ending with --ar 2:3 --style raw --v 6`;
                 <TouchableOpacity style={s.profileCloudApply} onPress={applyUserPhotoCloudUrl}>
                   <Text style={s.profileCloudApplyTxt}>✓</Text>
                 </TouchableOpacity>
+              </View>
+
+              {/* User Normal Avatar */}
+              <Text style={s.profileSectionLabel}>😇 Normal Mode Avatar</Text>
+              <Text style={s.profileSectionHint}>Normal mode chat-ல் இந்த photo-ஓட profile use ஆகும்.</Text>
+              <View style={s.profileAvatarRow}>
+                <TouchableOpacity onPress={pickUserNormalPhoto} activeOpacity={0.8}>
+                  {uploadingUserNormal
+                    ? <View style={s.profileAvatar}><ActivityIndicator color="#fff" /></View>
+                    : userNormalPhoto
+                      ? <Image source={{ uri: userNormalPhoto }} style={s.profileAvatar} />
+                      : <View style={[s.profileAvatar, { backgroundColor: '#2196F3' }]}>
+                          <Text style={{ fontSize: 32 }}>😇</Text>
+                        </View>
+                  }
+                  <View style={s.profileAvatarEdit}><Text style={s.profileAvatarEditTxt}>✏️</Text></View>
+                </TouchableOpacity>
+                <View style={s.profileAvatarBtns}>
+                  <TouchableOpacity style={s.profileAvatarBtn} onPress={pickUserNormalPhoto}>
+                    <Text style={s.profileAvatarBtnTxt}>📱 Gallery (Normal)</Text>
+                  </TouchableOpacity>
+                  {userNormalPhoto && (
+                    <TouchableOpacity style={[s.profileAvatarBtn, { backgroundColor: '#fdecea' }]}
+                      onPress={() => { setUserNormalPhoto(null); AsyncStorage.removeItem('user_normal_photo'); }}>
+                      <Text style={[s.profileAvatarBtnTxt, { color: '#c62828' }]}>🗑 Remove</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {/* User Prasana Avatar */}
+              <Text style={s.profileSectionLabel}>😈 Prasana Mode Avatar</Text>
+              <Text style={s.profileSectionHint}>Prasana mode chat-ல் இந்த photo-ஓட profile use ஆகும்.</Text>
+              <View style={s.profileAvatarRow}>
+                <TouchableOpacity onPress={pickUserPrasanaPhoto} activeOpacity={0.8}>
+                  {uploadingUserPrasana
+                    ? <View style={s.profileAvatar}><ActivityIndicator color="#fff" /></View>
+                    : userPrasanaPhoto
+                      ? <Image source={{ uri: userPrasanaPhoto }} style={s.profileAvatar} />
+                      : <View style={[s.profileAvatar, { backgroundColor: '#7B1FA2' }]}>
+                          <Text style={{ fontSize: 32 }}>😈</Text>
+                        </View>
+                  }
+                  <View style={s.profileAvatarEdit}><Text style={s.profileAvatarEditTxt}>✏️</Text></View>
+                </TouchableOpacity>
+                <View style={s.profileAvatarBtns}>
+                  <TouchableOpacity style={s.profileAvatarBtn} onPress={pickUserPrasanaPhoto}>
+                    <Text style={s.profileAvatarBtnTxt}>📱 Gallery (Prasana)</Text>
+                  </TouchableOpacity>
+                  {userPrasanaPhoto && (
+                    <TouchableOpacity style={[s.profileAvatarBtn, { backgroundColor: '#fdecea' }]}
+                      onPress={() => { setUserPrasanaPhoto(null); AsyncStorage.removeItem('user_prasana_photo'); }}>
+                      <Text style={[s.profileAvatarBtnTxt, { color: '#c62828' }]}>🗑 Remove</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
 
               {/* Name */}
