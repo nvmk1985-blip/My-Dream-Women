@@ -475,86 +475,99 @@ export async function generateImageHuggingFace(
   prompt: string,
   hfToken: string,
   model: string = HF_IMAGE_MODEL,
+  onStatus?: (msg: string) => void,
 ): Promise<{ b64_json: string; mimeType: string }> {
   let lastError: Error = new Error('HuggingFace connection failed');
 
-  // Try each endpoint (primary then fallback)
-  for (const base of HF_ENDPOINTS) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 120000);
-    try {
-      const res = await fetch(`${base}/${model}`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${hfToken}`,
-          'Content-Type': 'application/json',
-          'X-Wait-For-Model': 'true',
-        },
-        body: JSON.stringify({ inputs: prompt, parameters: { num_inference_steps: 20 } }),
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
+  const sleepMs = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-      if (res.status === 503) {
-        // Model loading — wait and retry same endpoint once
-        await new Promise(r => setTimeout(r, 20000));
-        const res2 = await fetch(`${base}/${model}`, {
+  // Try each endpoint
+  for (const base of HF_ENDPOINTS) {
+    // Retry loop for cold-start / model loading (up to 3 minutes)
+    const RETRY_TIMEOUT_MS = 180000;
+    const retryStart = Date.now();
+    let attempt = 0;
+
+    while (Date.now() - retryStart < RETRY_TIMEOUT_MS) {
+      attempt++;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 120000);
+      try {
+        onStatus?.(attempt === 1 ? 'Generating...' : 'Preparing AI...');
+
+        const res = await fetch(`${base}/${model}`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${hfToken}`,
             'Content-Type': 'application/json',
+            'X-Wait-For-Model': 'true',
           },
-          body: JSON.stringify({ inputs: prompt }),
+          body: JSON.stringify({ inputs: prompt, parameters: { num_inference_steps: 20 } }),
+          signal: controller.signal,
         });
-        if (!res2.ok) {
-          const e = await res2.json().catch(() => ({})) as any;
-          throw new Error(e?.error || `Model unavailable (${res2.status})`);
+        clearTimeout(timer);
+
+        // 503 = model loading / cold-start — keep polling every 5s
+        if (res.status === 503) {
+          const errJson = await res.json().catch(() => ({})) as any;
+          const estimatedTime = errJson?.estimated_time ?? 20;
+          onStatus?.('AI model is starting. This may take 1-3 minutes.');
+          await sleepMs(Math.min(estimatedTime * 1000, 10000));
+          continue;
         }
-        const blob2 = await res2.blob();
-        const mimeType2 = res2.headers.get('content-type') || 'image/jpeg';
-        const b64_2 = await blobToBase64(blob2);
-        if (!b64_2) throw new Error('Empty image response');
-        return { b64_json: b64_2, mimeType: mimeType2.split(';')[0] };
-      }
 
-      if (!res.ok) {
-        const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('json')) {
-          const e = await res.json().catch(() => ({})) as any;
-          const msg = e?.error || e?.message || `HTTP ${res.status}`;
-          // 401 = wrong token, 403 = gated model — no point retrying other endpoint
-          if (res.status === 401) throw new Error('HuggingFace token தவறானது ❌ — Keys-ல் சரியான token போடுங்க');
-          if (res.status === 403) throw new Error('இந்த model access இல்லை ❌ — HuggingFace-ல் model access request பண்ணுங்க');
-          throw new Error(msg);
+        // Auth errors — no retry
+        if (res.status === 401) throw new Error('HuggingFace token தவறானது ❌ — Keys-ல் சரியான token போடுங்க');
+        if (res.status === 403) throw new Error('இந்த model access இல்லை ❌ — HuggingFace-ல் model access request பண்ணுங்க');
+
+        // Rate limit — wait and retry
+        if (res.status === 429) {
+          onStatus?.('Daily API limit reached. Please try later or add your Hugging Face API key.');
+          await sleepMs(10000);
+          continue;
         }
-        throw new Error(`HuggingFace error: ${res.status}`);
+
+        if (!res.ok) {
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('json')) {
+            const e = await res.json().catch(() => ({})) as any;
+            throw new Error(e?.error || e?.message || `HTTP ${res.status}`);
+          }
+          throw new Error(`HuggingFace error: ${res.status}`);
+        }
+
+        // Success — read as blob (Android-safe)
+        onStatus?.('Processing image...');
+        const blob = await res.blob();
+        const mimeType = res.headers.get('content-type') || 'image/jpeg';
+
+        // Check if response is JSON error disguised as image
+        if (mimeType.includes('json') || mimeType.includes('text')) {
+          const text = await blob.text();
+          let parsed: any = {};
+          try { parsed = JSON.parse(text); } catch {}
+          const b64 = parsed?.image || parsed?.images?.[0] || parsed?.generated_image || '';
+          if (b64) return { b64_json: b64, mimeType: 'image/jpeg' };
+          throw new Error(parsed?.error || 'JSON response — image இல்லை');
+        }
+
+        const b64 = await blobToBase64(blob);
+        if (!b64) throw new Error('Empty image data');
+        return { b64_json: b64, mimeType: mimeType.split(';')[0] };
+
+      } catch (e: any) {
+        clearTimeout(timer);
+        lastError = e;
+        // Don't retry auth errors
+        if (e?.message?.includes('token') || e?.message?.includes('access')) throw e;
+        // Transient network error — retry after 5s
+        if (e?.name === 'AbortError' || !e?.message?.includes('HTTP')) {
+          onStatus?.('Preparing AI...');
+          await sleepMs(5000);
+          continue;
+        }
+        break; // non-retryable error, try next endpoint
       }
-
-      // Success — read as blob (Android-safe)
-      const blob = await res.blob();
-      const mimeType = res.headers.get('content-type') || 'image/jpeg';
-
-      // Check if response is JSON error disguised as image
-      if (mimeType.includes('json') || mimeType.includes('text')) {
-        const text = await blob.text();
-        let parsed: any = {};
-        try { parsed = JSON.parse(text); } catch {}
-        const b64 = parsed?.image || parsed?.images?.[0] || parsed?.generated_image || '';
-        if (b64) return { b64_json: b64, mimeType: 'image/jpeg' };
-        throw new Error(parsed?.error || 'JSON response — image இல்லை');
-      }
-
-      const b64 = await blobToBase64(blob);
-      if (!b64) throw new Error('Empty image data');
-      return { b64_json: b64, mimeType: mimeType.split(';')[0] };
-
-    } catch (e: any) {
-      clearTimeout(timer);
-      lastError = e;
-      // Don't retry auth errors
-      if (e?.message?.includes('token') || e?.message?.includes('access')) throw e;
-      // Try next endpoint
-      continue;
     }
   }
 
