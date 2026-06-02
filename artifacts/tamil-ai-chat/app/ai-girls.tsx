@@ -22,7 +22,7 @@ import {
   setupNotificationChannel,
   requestNativeNotificationPermission,
 } from '../services/native-notifications';
-import { uploadToCloudinary } from '../services/api';
+import { uploadToCloudinary, imageToPrompt } from '../services/api';
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 
@@ -670,7 +670,7 @@ export default function AIGirlsScreen() {
     playRingtone(id);
   };
 
-  // ── Photo to Script (Gemini server → Qwen2-VL → Florence-2 → LLaVA, with auto-retry) ──
+  // ── Photo to Script (Gemini key direct → Qwen2-VL → Florence-2 → LLaVA) ──
   const handlePhotoToScript = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { Alert.alert('Permission வேணும்', 'Photos access allow பண்ணுங்க'); return; }
@@ -691,56 +691,49 @@ export default function AIGirlsScreen() {
         base64 = await FileSystem.readAsStringAsync(tempUri, { encoding: FileSystem.EncodingType.Base64 });
         await FileSystem.deleteAsync(tempUri, { idempotent: true });
       }
+
+      const sleepMs = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+      // ── Priority 1: Gemini / OpenRouter (keys from AsyncStorage — Keys screen) ──
+      setScriptText('Analyzing image...');
+      try {
+        const dataUri = `data:image/jpeg;base64,${base64}`;
+        const result = await imageToPrompt(dataUri);
+        if (result && result.length > 50) {
+          setScriptText(result);
+          setScriptModelUsed('Gemini AI');
+          setScriptLoading(false);
+          return;
+        }
+      } catch (geminiErr: any) {
+        // If no key at all, show key message and stop
+        if (geminiErr?.message?.includes('🔑')) {
+          setScriptText(geminiErr.message);
+          setScriptLoading(false);
+          return;
+        }
+        // Otherwise fall through to HF models
+      }
+
+      // ── HF fallback: need HF key ────────────────────────────────────────
       const keysRaw = await AsyncStorage.getItem('api_keys_store');
       const storedKeys: Record<string, string> = keysRaw ? JSON.parse(keysRaw) : {};
       const hfKey = storedKeys['hf']?.trim();
 
-      const sleepMs = (ms: number) => new Promise(r => setTimeout(r, ms));
+      if (!hfKey) {
+        setScriptText('Gemini key-ல் பிழை. Keys screen-ல் HuggingFace key-ஐயும் enter பண்ணுங்க.');
+        setScriptLoading(false);
+        return;
+      }
 
-      const ANALYSIS_PROMPT = `Analyze this image in full detail. Use these exact section headers and fill each one:
+      const ANALYSIS_PROMPT = `Analyze this image in full detail. Describe: face, hair, clothing, body, pose, background, lighting, camera angle.
 
-## FACE
-Skin tone, face shape, eyes (color + shape), nose, lips, eyebrows, jaw, cheeks, makeup.
-
-## HAIR
-Length, color, texture (straight/wavy/curly), style, hair accessories.
-
-## CLOTHING
-Every visible garment: type, color, fabric, pattern, fit. All accessories and jewelry.
-
-## UNCOVERED BODY PARTS
-List exactly what skin is visible — midriff, legs (from where to where), arms, neckline depth, cleavage, back, shoulders, underarms, feet. Be very specific.
-
-## POSE & BODY POSITION
-Standing/sitting/lying, body angle, posture, hand and arm positions.
-
-## VISIBLE BODY DETAILS
-Body type (slim/medium/curvy/athletic), proportions, height estimate.
-
-## BACKGROUND & ENVIRONMENT
-Location, indoor/outdoor, objects, colors, textures, atmosphere.
-
-## LIGHTING & SHADOWS
-Light direction, type (natural/golden hour/studio/soft), shadow placement, highlights.
-
-## CAMERA ANGLE & COMPOSITION
-Angle (front/side/low-angle/bird-eye), framing (full body/half/portrait), depth of field.
-
-## IMAGE STYLE & QUALITY
-Photography/illustration/3D render, resolution estimate, color grading, overall quality.
-
----
-
+Then write these prompts:
 ## FLUX PROMPT
-Write a complete, detailed Flux image generation prompt based on this exact image. Include every visual detail.
-
 ## STABLE DIFFUSION PROMPT
-Write a complete SD/SDXL prompt. Include: masterpiece, best quality, ultra detailed, plus all visual details.
+## MIDJOURNEY PROMPT`;
 
-## MIDJOURNEY PROMPT
-Write a complete Midjourney v6 prompt ending with --ar 2:3 --style raw --v 6`;
-
-      // Helper: try a HF vision model with retry on 503 (cold-start)
+      // Helper: try a HF vision model with auto-retry on 503 cold-start
       const tryHFModel = async (
         url: string,
         body: object,
@@ -757,14 +750,11 @@ Write a complete Midjourney v6 prompt ending with --ar 2:3 --style raw --v 6`;
               signal: AbortSignal.timeout(120000),
             });
             if (r.status === 503) {
-              setScriptText('AI model is starting. This may take 1-3 minutes.');
+              setScriptText(`AI model starting (${label})... கொஞ்சம் wait பண்ணுங்க`);
               await sleepMs(15000);
               continue;
             }
-            if (r.status === 429) {
-              setScriptText('Daily API limit reached. Trying next model...');
-              return null;
-            }
+            if (r.status === 429) { return null; }
             if (!r.ok) return null;
             const j = await r.json() as any;
             const out = parseResult(j);
@@ -774,34 +764,7 @@ Write a complete Midjourney v6 prompt ending with --ar 2:3 --style raw --v 6`;
         return null;
       };
 
-      // ── Priority 1: Gemini via API server (most reliable) ───────────────
-      setScriptText('Analyzing image...');
-      try {
-        const REPLIT_API = (process.env['EXPO_PUBLIC_API_URL'] ?? '').replace(/\/$/, '');
-        const serverRes = await fetch(`${REPLIT_API}/api/image-to-prompt`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ b64: base64, mime: 'image/jpeg' }),
-          signal: AbortSignal.timeout(60000),
-        });
-        if (serverRes.ok) {
-          const serverData = await serverRes.json() as any;
-          if (serverData?.prompt && serverData.prompt.length > 50) {
-            setScriptText(serverData.prompt);
-            setScriptModelUsed('Gemini AI');
-            setScriptLoading(false);
-            return;
-          }
-        }
-      } catch { /* fallthrough to HF models */ }
-
-      if (!hfKey) {
-        setScriptText('🔑 Keys → HuggingFace API key enter பண்ணுங்க.\n\nhttps://huggingface.co/settings/tokens → New token (free account OK)');
-        setScriptLoading(false);
-        return;
-      }
-
-      // ── Priority 2: Qwen2-VL ────────────────────────────────────────────
+      // ── Priority 2: Qwen2-VL ──────────────────────────────────────────
       const out1 = await tryHFModel(
         'https://api-inference.huggingface.co/models/Qwen/Qwen2-VL-7B-Instruct/v1/chat/completions',
         { model: 'Qwen/Qwen2-VL-7B-Instruct', max_tokens: 2048, messages: [{ role: 'user', content: [
@@ -821,7 +784,8 @@ Write a complete Midjourney v6 prompt ending with --ar 2:3 --style raw --v 6`;
         (j) => (Array.isArray(j) ? j[0]?.generated_text : j?.generated_text) ?? '',
       );
       if (out2) {
-        setScriptText('## IMAGE ANALYSIS (Florence-2)\n' + out2 + '\n\n---\n\n## NOTE\nFor full SD/Flux/MJ prompts, retry — Gemini will give better results.');
+        setScriptText('## IMAGE ANALYSIS (Florence-2)
+' + out2);
         setScriptModelUsed('Florence-2-Large'); setScriptLoading(false); return;
       }
 
@@ -837,16 +801,16 @@ Write a complete Midjourney v6 prompt ending with --ar 2:3 --style raw --v 6`;
       );
       if (out3) { setScriptText(out3); setScriptModelUsed('LLaVA-1.5-7B'); setScriptLoading(false); return; }
 
-      // All failed — friendly message with retry option
-      setScriptText('AI server இப்போது பிஸியாக உள்ளது.\n\nசில நிமிடங்கள் கழித்து மீண்டும் try பண்ணுங்க.');
+      // All failed — ask user to retry
+      setScriptText('AI server இப்போது பிஸி. சில நிமிடம் கழித்து மீண்டும் try பண்ணுங்க.');
     } catch (e: any) {
-      setScriptText('AI server respond ஆகவில்லை. மீண்டும் try பண்ணுங்க.');
+      setScriptText('பிழை ஏற்பட்டது. மீண்டும் try பண்ணுங்க.');
     } finally {
       setScriptLoading(false);
     }
   };
 
-  // ── Settings helpers ──────────────────────────────────────────
+    // ── Settings helpers ──────────────────────────────────────────
   const toggleOnline = async () => {
     const next = !isOnline;
     setIsOnline(next);
