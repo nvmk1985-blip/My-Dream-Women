@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Image, Alert, ActivityIndicator, ScrollView, Dimensions, StatusBar, Switch, Animated,
+  Image, Alert, ActivityIndicator, ScrollView, Dimensions, StatusBar, Switch, Animated, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
@@ -371,6 +371,7 @@ export default function FaceSwapScreen() {
   const [progress, setProgress] = useState(0);
   const [usedModel, setUsedModel] = useState('');
   const [enhanceEnabled, setEnhanceEnabled] = useState(true);
+  const [showVidmage, setShowVidmage] = useState(false);
 
   const pickImage = async (slot: 'target' | 'face') => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -407,6 +408,7 @@ export default function FaceSwapScreen() {
     setStatusMsg('Preparing AI...');
     setProgress(2);
     setUsedModel('');
+    setShowVidmage(false);
 
     try {
       const keysRaw = await AsyncStorage.getItem('api_keys_store').catch(() => null);
@@ -446,11 +448,9 @@ export default function FaceSwapScreen() {
       }
 
       if (!swapResult) {
-        Alert.alert(
-          'தோல்வி',
-          'AI service இப்போது respond ஆகவில்லை.\n\n• Internet connection சரி பார்க்கவும்\n• சில நிமிடம் கழித்து மீண்டும் try பண்ணுங்க\n• Settings-ல் HuggingFace key set பண்ணுங்க (faster)',
-        );
-        setStatusMsg(''); setProgress(0); return;
+        setStatusMsg('hf_failed');
+        setProgress(0);
+        return;
       }
 
       // ── STEP 2: GFPGAN Face Restoration (75–85%) ───────────────────────────
@@ -613,6 +613,33 @@ export default function FaceSwapScreen() {
           </Text>
         ) : null}
 
+        {/* HF Failed → Vidmage fallback card */}
+        {!loading && statusMsg === 'hf_failed' ? (
+          <View style={s.vidmageCard}>
+            <Text style={s.vidmageTitle}>⚠️ AI Models இப்போது Busy</Text>
+            <Text style={s.vidmageDesc}>
+              HuggingFace free models இப்போது respond ஆகவில்லை.{'
+'}
+              கீழே உள்ள vidmage.ai-ல் free-ஆக face swap பண்ணலாம்!
+            </Text>
+            <TouchableOpacity
+              style={s.vidmageBtn}
+              onPress={() => Linking.openURL('https://vidmage.ai/face-swap')}
+            >
+              <Text style={s.vidmageBtnTxt}>🌐 vidmage.ai-ல் Try பண்ணுங்க →</Text>
+            </TouchableOpacity>
+            <Text style={s.vidmageSub}>
+              Free · No signup · Browser-ல் open ஆகும்
+            </Text>
+            <TouchableOpacity
+              style={s.retryBtn}
+              onPress={() => { setStatusMsg(''); startSwap(); }}
+            >
+              <Text style={s.retryBtnTxt}>🔄 மீண்டும் Try</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {/* Result */}
         {resultUrl ? (
           <View style={s.resultCard}>
@@ -628,6 +655,14 @@ export default function FaceSwapScreen() {
             </TouchableOpacity>
           </View>
         ) : null}
+
+        {/* Always-visible alternative link */}
+        <TouchableOpacity
+          style={s.altLink}
+          onPress={() => Linking.openURL('https://vidmage.ai/face-swap')}
+        >
+          <Text style={s.altLinkTxt}>🌐 Alternative: vidmage.ai Face Swap (browser)</Text>
+        </TouchableOpacity>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -673,4 +708,14 @@ const s = StyleSheet.create({
   resultImg: { width: '100%', height: width - 40, borderRadius: 12, backgroundColor: '#0f0f1a' },
   saveBtn: { backgroundColor: '#1d4ed8', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 12 },
   saveBtnTxt: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  vidmageCard: { backgroundColor: '#1a1010', borderRadius: 16, padding: 18, marginTop: 16, borderWidth: 1.5, borderColor: '#f59e0b88' },
+  vidmageTitle: { color: '#f59e0b', fontSize: 15, fontWeight: '800', textAlign: 'center', marginBottom: 8 },
+  vidmageDesc: { color: '#ccc', fontSize: 13, textAlign: 'center', lineHeight: 20, marginBottom: 14 },
+  vidmageBtn: { backgroundColor: '#f59e0b', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 8, elevation: 4, shadowColor: '#f59e0b', shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+  vidmageBtnTxt: { color: '#000', fontSize: 15, fontWeight: '900' },
+  vidmageSub: { color: '#888', fontSize: 11, textAlign: 'center', marginBottom: 12 },
+  retryBtn: { backgroundColor: '#1a1a2e', borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: '#7c3aed44' },
+  retryBtnTxt: { color: '#a78bfa', fontSize: 13, fontWeight: '700' },
+  altLink: { marginTop: 16, paddingVertical: 10, alignItems: 'center' },
+  altLinkTxt: { color: '#555', fontSize: 12, textDecorationLine: 'underline' },
 });
