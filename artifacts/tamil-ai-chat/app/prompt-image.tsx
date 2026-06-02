@@ -29,6 +29,8 @@ export default function PromptImageScreen() {
   const [loading, setLoading] = useState(false);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [progressMsg, setProgressMsg] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -79,18 +81,29 @@ export default function PromptImageScreen() {
     setLoading(true);
     setError(null);
     setImageUri(null);
+    setProgress(5);
+    setProgressMsg('Preparing AI...');
 
     try {
       const fullPrompt = negPrompt.trim()
         ? `${prompt.trim()} ### negative: ${negPrompt.trim()}`
         : prompt.trim();
 
-      const result = await generateImageHuggingFace(fullPrompt, hfToken, selectedModel);
+      const result = await generateImageHuggingFace(
+        fullPrompt, hfToken, selectedModel,
+        (msg) => setProgressMsg(msg),
+        (pct) => setProgress(pct),
+      );
+      setProgress(100);
+      setProgressMsg('✅ Done!');
+      await new Promise(r => setTimeout(r, 300));
       setImageUri(`data:${result.mimeType};base64,${result.b64_json}`);
     } catch (e: any) {
       setError(e?.message || 'Image generate பண்ண முடியலை. மீண்டும் try பண்ணுங்க.');
     } finally {
       setLoading(false);
+      setProgress(0);
+      setProgressMsg('');
     }
   };
 
@@ -185,12 +198,25 @@ export default function PromptImageScreen() {
             {loading ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <ActivityIndicator color="#fff" />
-                <Text style={s.genBtnTxt}>Generating... (20–60 sec)</Text>
+                <Text style={s.genBtnTxt}>Generating... ({Math.round(progress)}%)</Text>
               </View>
             ) : (
               <Text style={s.genBtnTxt}>🎨 Image Generate பண்ணு</Text>
             )}
           </TouchableOpacity>
+
+          {/* Progress bar */}
+          {loading && progress > 0 ? (
+            <View style={s.progressContainer}>
+              <View style={s.progressRow}>
+                <Text style={s.progressMsg} numberOfLines={2}>{progressMsg}</Text>
+                <Text style={s.progressPct}>{Math.round(Math.min(100, progress))}%</Text>
+              </View>
+              <View style={s.progressTrack}>
+                <View style={[s.progressFill, { width: `${Math.min(100, progress)}%` }]} />
+              </View>
+            </View>
+          ) : null}
 
           {/* No token warning */}
           {!hfToken && (
@@ -293,4 +319,13 @@ const s = StyleSheet.create({
     paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#333',
   },
   regenBtnTxt: { color: '#E91E8C', fontSize: 14, fontWeight: '600' },
+  progressContainer: {
+    backgroundColor: '#12103a', borderRadius: 12, padding: 12,
+    marginTop: 10, borderWidth: 1, borderColor: '#E91E8C33',
+  },
+  progressRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
+  progressMsg: { color: '#c4b5fd', fontSize: 12, flex: 1, lineHeight: 18 },
+  progressPct: { color: '#fff', fontSize: 20, fontWeight: '900', minWidth: 46, textAlign: 'right' },
+  progressTrack: { height: 8, borderRadius: 4, backgroundColor: '#1e1b4b', overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: 4, backgroundColor: '#E91E8C' },
 });
