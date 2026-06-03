@@ -784,8 +784,7 @@ Then write these prompts:
         (j) => (Array.isArray(j) ? j[0]?.generated_text : j?.generated_text) ?? '',
       );
       if (out2) {
-        setScriptText('## IMAGE ANALYSIS (Florence-2)
-' + out2);
+        setScriptText('## IMAGE ANALYSIS (Florence-2)\n' + out2);
         setScriptModelUsed('Florence-2-Large'); setScriptLoading(false); return;
       }
 
