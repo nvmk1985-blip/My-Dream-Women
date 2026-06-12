@@ -1,10 +1,14 @@
 #!/bin/bash
 set -e
 
-# Render build: actually rebuild api-server from source so dist/ stays in sync.
-# Prevents stale-dist deploys when src changes aren't accompanied by a dist rebuild.
+# Render build: install deps only — dist is pre-built and committed to the repo.
+# This avoids Render build environment issues and ensures the correct routes
+# (including analyze-file) are always present.
 
 echo "==> Node: $(node --version) | npm: $(npm --version)"
+echo "==> Using pre-built dist from repository (built 2026-06-12 07:01 UTC)"
+echo "==> Verifying dist/index.mjs exists..."
+ls -lh artifacts/api-server/dist/index.mjs
 
 # Fix for EROFS: use NPM_CONFIG_PREFIX to install pnpm to home dir (not /usr/lib)
 if ! command -v pnpm >/dev/null 2>&1; then
@@ -17,15 +21,11 @@ else
   echo "==> pnpm version: $(pnpm --version)"
 fi
 
-echo "==> Installing api-server workspace deps (filtered, no lockfile freeze to tolerate minor drift)"
+echo "==> Installing api-server workspace deps"
 pnpm install --filter @workspace/api-server... --no-frozen-lockfile
-
-echo "==> Building api-server"
-pnpm --filter @workspace/api-server run build
 
 echo "==> Installing @gradio/client (runtime, not bundled)"
 npm install @gradio/client
 
-echo "==> Render build complete"
-
-echo "==> Build complete at 2026-06-12 07:00 UTC"
+echo "==> Render build complete — dist ready"
+ls -lh artifacts/api-server/dist/
