@@ -23,7 +23,24 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "Available SDK tools:"
+          ls $ANDROID_HOME/cmdline-tools/ 2>/dev/null || echo "cmdline-tools not found"
+          ls $ANDROID_HOME/platform-tools/ 2>/dev/null || echo "platform-tools not found"
+          # Install required SDK components via sdkmanager
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ -f "$SDKMANAGER" ]; then
+            echo "Using sdkmanager at $SDKMANAGER"
+            yes | $SDKMANAGER "platform-tools" "build-tools;34.0.0" "platforms;android-34" 2>/dev/null || true
+          else
+            echo "sdkmanager not found at latest — trying other paths"
+            SDKMANAGER2=$(find $ANDROID_HOME/cmdline-tools -name sdkmanager 2>/dev/null | head -1)
+            if [ -n "$SDKMANAGER2" ]; then
+              yes | $SDKMANAGER2 "platform-tools" "build-tools;34.0.0" "platforms;android-34" 2>/dev/null || true
+            fi
+          fi
+          echo "Android SDK setup complete"
 
       - name: Install ImageMagick
         run: |
