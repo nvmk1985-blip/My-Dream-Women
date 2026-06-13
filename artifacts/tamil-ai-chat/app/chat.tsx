@@ -1835,6 +1835,12 @@ Each label: 1 sentence max.`;
                 : <Text style={styles.cameraIcon}>🔤</Text>
               }
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.chatFabItem, { backgroundColor: '#FF6D00' }]}
+              onPress={() => router.push('/face-swap')}
+            >
+              <Text style={styles.cameraIcon}>🔄</Text>
+            </TouchableOpacity>
           </View>
           {/* Compact input bar — WhatsApp style */}
           <View style={styles.inputBar}>
