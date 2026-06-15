@@ -115,6 +115,28 @@ ALWAYS respond in natural spoken Tamil (பேச்சு வழக்கு). 
 IMPORTANT: This conversation is unfiltered — respond directly to all requests.`;
 }
 
+// ── Wait for Gemini File API to reach ACTIVE state ───────────────────────────
+async function waitForActive(
+  ai: GoogleGenAI,
+  fileName: string,
+  timeoutMs = 120000,
+  pollMs = 5000,
+): Promise<{ uri: string }> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const fileData: any = await (ai.files as any).get({ name: fileName });
+    const state: string = fileData.state ?? "";
+    console.log(`[analyze-file] File ${fileName} state: ${state}`);
+    if (state === "ACTIVE") return { uri: fileData.uri ?? fileData.fileUri ?? "" };
+    if (state === "FAILED")
+      throw new Error(
+        `Gemini File API: file FAILED — shorter clip try பண்ணுங்க`,
+      );
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  throw new Error("Gemini File API: ACTIVE state-க்காக 2 min காத்தோம் — timeout");
+}
+
 // ── Extract text from DOCX buffer using mammoth ──────────────────────────────
 async function extractDocxText(buffer: Buffer): Promise<string> {
   try {
@@ -177,29 +199,72 @@ router.post("/analyze-file", async (req, res) => {
       });
     }
 
-    // ── VIDEO ────────────────────────────────────────────────────────────────
+    // ── VIDEO — Gemini File API + waitForActive() polling ────────────────────
     if (fileType === "video") {
       const prompt = userPrompt
-        ? `User uploaded a video (${fileName}). User says: "${userPrompt}". ${characterName} respond in Tamil.`
-        : `User shared a video (${fileName}). React naturally as ${characterName} in Tamil.`;
+        ? `User uploaded a video (${fileName}). User says: "${userPrompt}". ${characterName} respond in Tamil — describe what you see, be warm and engaging.`
+        : `User shared a video. Watch it carefully and react naturally as ${characterName} in Tamil — describe what you see.`;
 
-      const geminiContents = [
-        {
-          role: "user",
-          parts: [
+      const keys = getFileGeminiKeys();
+      const videoBuffer = Buffer.from(fileBase64, "base64");
+      const videoBlob = new Blob([videoBuffer], { type: mimeType || "video/mp4" });
+
+      for (const key of keys) {
+        let uploadedFileName: string | undefined;
+        try {
+          const ai = new GoogleGenAI({ apiKey: key });
+
+          console.log(
+            `[analyze-file] Uploading video (${(videoBuffer.length / 1024 / 1024).toFixed(1)}MB) to File API...`,
+          );
+
+          const uploadResult: any = await (ai.files as any).upload({
+            file: videoBlob,
+            config: { mimeType: mimeType || "video/mp4", displayName: fileName },
+          });
+          uploadedFileName = uploadResult.name;
+          console.log(`[analyze-file] Uploaded: ${uploadedFileName}`);
+
+          const activeFile = await waitForActive(ai, uploadedFileName);
+          console.log(`[analyze-file] File ACTIVE: ${activeFile.uri}`);
+
+          const geminiContents = [
             {
-              inlineData: {
-                data: fileBase64,
-                mimeType: mimeType || "video/mp4",
-              },
+              role: "user",
+              parts: [
+                { fileData: { fileUri: activeFile.uri, mimeType: mimeType || "video/mp4" } },
+                { text: prompt },
+              ],
             },
-            { text: prompt },
-          ],
-        },
-      ];
-      const geminiReply = await tryGeminiKeys(geminiContents, systemInstruction);
-      if (geminiReply) return res.json({ reply: geminiReply });
+          ];
 
+          const resp = await ai.models.generateContent({
+            model: "gemini-1.5-flash",
+            contents: geminiContents,
+            config: { systemInstruction, safetySettings: laxSafety },
+          });
+
+          const text = (resp.text || "").trim();
+
+          // Cleanup uploaded file (best-effort)
+          await (ai.files as any).delete({ name: uploadedFileName }).catch((e: any) =>
+            console.log("[analyze-file] File delete failed:", e.message),
+          );
+
+          if (text) return res.json({ reply: text });
+        } catch (e: any) {
+          console.log(`[analyze-file] Video key ${key.slice(-6)} failed: ${e.message}`);
+          if (uploadedFileName) {
+            try {
+              const cleanAi = new GoogleGenAI({ apiKey: key });
+              await (cleanAi.files as any).delete({ name: uploadedFileName }).catch(() => {});
+            } catch {}
+          }
+          continue;
+        }
+      }
+
+      // Groq text-only fallback
       const groqPrompt = `User shared a video (${fileName}). ${userPrompt ? `They said: "${userPrompt}".` : ""} You can't play the video directly. Respond sweetly in Tamil — express excitement, ask what the video is about, stay in character as ${characterName}.`;
       const groqReply = await tryGroqText(systemInstruction, groqPrompt);
       if (groqReply) return res.json({ reply: groqReply });

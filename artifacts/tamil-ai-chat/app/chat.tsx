@@ -947,6 +947,8 @@ Each label: 1 sentence max.`;
                 id: Date.now().toString(), role: 'user',
                 content: isVideo ? `🎬 Video analyze பண்ணுங்க` : `📷 Photo analyze பண்ணுங்க`,
                 timestamp: new Date(),
+                sentMediaType: isVideo ? 'video' : 'image',
+                sentMediaUri: asset.uri,
               };
               setMessages(prev => [...prev, userMsg]);
               setFileLoading(true);
@@ -1617,6 +1619,19 @@ Each label: 1 sentence max.`;
                   <Text style={{ color: '#25D366', fontSize: 11, fontWeight: '700' }}>Save</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          ) : item.sentMediaType === 'video' ? (
+            <View>
+              <View style={{ width: 200, height: 120, backgroundColor: '#0d0d0d', borderRadius: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#444' }}>
+                <Text style={{ fontSize: 40 }}>🎬</Text>
+                <Text style={{ color: '#bbb', fontSize: 11, marginTop: 6, fontWeight: '600' }}>Video Sent</Text>
+              </View>
+              <Text selectable style={[styles.msgText, { color: msgTextColor, marginTop: 6 }]}>{item.content}</Text>
+            </View>
+          ) : item.sentMediaType === 'image' && item.sentMediaUri ? (
+            <View>
+              <Image source={{ uri: item.sentMediaUri }} style={{ width: 200, height: 200, borderRadius: 10 }} resizeMode="cover" />
+              <Text selectable style={[styles.msgText, { color: msgTextColor, marginTop: 4 }]}>{item.content}</Text>
             </View>
           ) : (
             <Text selectable style={[styles.msgText, { color: msgTextColor }]}>{item.content}</Text>
