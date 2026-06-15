@@ -28,7 +28,6 @@ jobs:
           echo "Available SDK tools:"
           ls $ANDROID_HOME/cmdline-tools/ 2>/dev/null || echo "cmdline-tools not found"
           ls $ANDROID_HOME/platform-tools/ 2>/dev/null || echo "platform-tools not found"
-          # Install required SDK components via sdkmanager
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           if [ -f "$SDKMANAGER" ]; then
             echo "Using sdkmanager at $SDKMANAGER"
@@ -183,7 +182,7 @@ jobs:
           if [ -z "$APK" ] || [ "$SIZE" -lt 1000000 ]; then
             echo "APK invalid ($SIZE bytes)"; tail -80 /tmp/gradle.log; exit 1
           fi
-          APK_NAME="my-girls-v${{ github.run_number }}.apk"
+          APK_NAME="my-dream-women-v${{ github.run_number }}.apk"
           cp "$APK" "$APK_NAME"
           echo "APK_NAME=$APK_NAME" >> $GITHUB_ENV
 
@@ -193,8 +192,8 @@ jobs:
         run: |
           TAG="v${{ github.run_number }}"
           gh release create "$TAG" "$APK_NAME" \
-            --title "My Girls — Build ${{ github.run_number }}" \
-            --notes "Build ${{ github.run_number }} — Cloudinary icon auto-fetch + all bug fixes" \
+            --title "My Dream Women — Build ${{ github.run_number }}" \
+            --notes "Build ${{ github.run_number }} — New icon + name update" \
             --latest \
             --repo ${{ github.repository }}
           echo "https://github.com/${{ github.repository }}/releases/download/$TAG/$APK_NAME"
