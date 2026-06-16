@@ -1,29 +1,12 @@
 services:
   - type: web
-    name: my-girls-api
+    name: api-server
     runtime: node
-    plan: free
-    buildCommand: bash render-build.sh
-    startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs
+    region: singapore
+    buildCommand: corepack prepare pnpm@10.26.1 --activate && pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server run build
+    startCommand: pnpm --filter @workspace/api-server run start
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 10000
-      - key: SESSION_SECRET
+      - key: DATABASE_URL
         sync: false
-      - key: FAL_KEY
-        sync: false
-      - key: CLOUDINARY_API_SECRET
-        sync: false
-      - key: AI_INTEGRATIONS_OPENROUTER_BASE_URL
-        sync: false
-      - key: AI_INTEGRATIONS_OPENROUTER_API_KEY
-        sync: false
-      - key: AI_INTEGRATIONS_GEMINI_BASE_URL
-        sync: false
-      - key: AI_INTEGRATIONS_GEMINI_API_KEY
-        sync: false
-      - key: AIFACESWAP_KEY
-        sync: false
-      - fromGroup: "Multimidia Key"
