@@ -217,7 +217,7 @@ export async function sendMessage(
   // Try each client key in order
   for (const key of tryKeysOrdered.length > 0 ? tryKeysOrdered : [undefined as any]) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30000);
+    const timer = setTimeout(() => controller.abort(), 65000);
     try {
       const res = await fetch(`${REPLIT_API}/api/chat`, {
         method: 'POST',
@@ -248,7 +248,7 @@ export async function sendMessage(
   // All client keys exhausted — let server try with its own keys (no clientApiKey)
   if (lastError?.message === 'quota' && tryKeysOrdered.length > 0) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30000);
+    const timer = setTimeout(() => controller.abort(), 65000);
     try {
       const res = await fetch(`${REPLIT_API}/api/chat`, {
         method: 'POST',
