@@ -1,23 +1,23 @@
 #!/bin/bash
 set -e
 
-echo ">>> Node: $(node --version), npm: $(npm --version)"
+echo ">>> Node: $(node --version)"
+echo ">>> npm: $(npm --version)"
+echo ">>> HOME: $HOME"
+echo ">>> PWD: $(pwd)"
 
-# Use system pnpm if available, otherwise install to writable user dir
-if command -v pnpm &>/dev/null; then
-  echo ">>> Using system pnpm: $(pnpm --version)"
-  PNPM="pnpm"
-else
-  echo ">>> pnpm not found — installing to $HOME/.npm-global"
-  npm install -g pnpm --prefix "$HOME/.npm-global"
-  PNPM="$HOME/.npm-global/bin/pnpm"
-  echo ">>> Installed pnpm: $($PNPM --version)"
-fi
+PNPM_DIR="$HOME/.npm-global"
+PNPM_BIN="$PNPM_DIR/bin/pnpm"
+
+echo ">>> Installing pnpm@10.26.1 to $PNPM_DIR ..."
+npm install -g pnpm@10.26.1 --prefix "$PNPM_DIR"
+echo ">>> pnpm installed: $($PNPM_BIN --version)"
 
 echo ">>> Installing workspace dependencies..."
-$PNPM install --frozen-lockfile
+$PNPM_BIN install --no-frozen-lockfile
 
 echo ">>> Building API server..."
-$PNPM --filter @workspace/api-server run build
+$PNPM_BIN --filter @workspace/api-server run build
 
 echo ">>> Build complete!"
+ls -la artifacts/api-server/dist/ 2>/dev/null || echo "WARNING: dist folder not found"
