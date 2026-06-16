@@ -595,13 +595,29 @@ export async function analyzeFile(params: {
   characterPrompt?: string;
   mood?: string;
 }): Promise<{ reply: string; docText?: string }> {
+  // Read user's active Gemini keys to pass to server (server may not have its own)
+  let clientGeminiKeys: string[] = [];
+  try {
+    const AS = (await import('@react-native-async-storage/async-storage')).default;
+    const [saved, enabledRaw] = await Promise.all([
+      AS.getItem('api_keys_store').catch(() => null),
+      AS.getItem('api_keys_enabled_v1').catch(() => null),
+    ]);
+    const parsed = saved ? JSON.parse(saved) as Record<string, string> : {};
+    const enabled = enabledRaw ? JSON.parse(enabledRaw) as Record<string, boolean> : {};
+    for (let i = 1; i <= 13; i++) {
+      const k = parsed[`gemini_${i}`];
+      if (k?.trim() && enabled[`gemini_${i}`] !== false) clientGeminiKeys.push(k.trim());
+    }
+  } catch {}
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90000);
   try {
     const res = await fetch(`${REPLIT_API}/api/analyze-file`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
+      body: JSON.stringify({ ...params, clientGeminiKeys }),
       signal: controller.signal,
     });
     clearTimeout(timer);

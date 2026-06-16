@@ -4,7 +4,7 @@ import mammoth from "mammoth";
 
 const router = Router();
 
-function getFileGeminiKeys(): string[] {
+function getServerGeminiKeys(): string[] {
   const keys: string[] = [];
   for (let i = 1; i <= 6; i++) {
     const val =
@@ -14,11 +14,15 @@ function getFileGeminiKeys(): string[] {
     const k = val?.trim();
     if (k && k.length > 10) keys.push(k);
   }
-  if (keys.length === 0)
-    console.log(
-      "[analyze-file] ⚠️ Gemini Keys எதுவுமே இல்லை! Render env-ஐ சரிபார்க்கவும்.",
-    );
   return keys;
+}
+
+function mergeGeminiKeys(clientKeys: string[] = []): string[] {
+  const serverKeys = getServerGeminiKeys();
+  // Client keys first (user's own quota), then server keys as fallback
+  const all = [...clientKeys, ...serverKeys];
+  // Deduplicate
+  return [...new Set(all.filter((k) => k && k.length > 10))];
 }
 
 function getGroqKey(): string | undefined {
@@ -27,10 +31,6 @@ function getGroqKey(): string | undefined {
     process.env["groq_key"] ||
     process.env["GROQ_KEY"] ||
     process.env["GROQ_API_KEY"];
-  if (!val)
-    console.log(
-      "[analyze-file] ⚠️ Groq key இல்லை! Render env-ஐ சரிபார்க்கவும்.",
-    );
   return val?.trim() || undefined;
 }
 
@@ -45,8 +45,8 @@ const laxSafety = [
 async function tryGeminiKeys(
   contents: any,
   systemInstruction: string,
+  keys: string[],
 ): Promise<string | null> {
-  const keys = getFileGeminiKeys();
   for (const key of keys) {
     try {
       const ai = new GoogleGenAI({ apiKey: key });
@@ -159,11 +159,20 @@ router.post("/analyze-file", async (req, res) => {
       userPrompt = "",
       characterName = "Kaviya",
       characterPrompt = "",
+      clientGeminiKeys = [],
     } = req.body;
 
     if (!fileBase64) {
       return res.status(400).json({ error: "fileBase64 is required" });
     }
+
+    // Merge client keys (user's Gemini quota) + server keys
+    const allGeminiKeys = mergeGeminiKeys(
+      Array.isArray(clientGeminiKeys) ? clientGeminiKeys : [],
+    );
+    console.log(
+      `[analyze-file] Keys: ${allGeminiKeys.length} total (${clientGeminiKeys?.length || 0} client + ${getServerGeminiKeys().length} server) for fileType=${fileType}`,
+    );
 
     const systemInstruction = buildSystemPrompt(characterName, characterPrompt);
 
@@ -171,7 +180,7 @@ router.post("/analyze-file", async (req, res) => {
     if (fileType === "image") {
       const prompt = userPrompt
         ? `User uploaded a photo. User says: "${userPrompt}". ${characterName} respond in Tamil.`
-        : `User shared a photo with ${characterName}. React naturally and sweetly in Tamil.`;
+        : `User shared a photo with ${characterName}. React naturally and sweetly in Tamil — describe what you see.`;
 
       const geminiContents = [
         {
@@ -187,7 +196,7 @@ router.post("/analyze-file", async (req, res) => {
           ],
         },
       ];
-      const geminiReply = await tryGeminiKeys(geminiContents, systemInstruction);
+      const geminiReply = await tryGeminiKeys(geminiContents, systemInstruction, allGeminiKeys);
       if (geminiReply) return res.json({ reply: geminiReply });
 
       const groqPrompt = `User shared a photo (${fileName}). ${userPrompt ? `They said: "${userPrompt}".` : ""} You can't see the image directly. React sweetly in Tamil — ask what's in the photo, compliment them for sharing, stay in character.`;
@@ -195,7 +204,7 @@ router.post("/analyze-file", async (req, res) => {
       if (groqReply) return res.json({ reply: groqReply });
 
       return res.json({
-        reply: `${characterName}: ஐயோ, படம் load ஆகல 😅 மறுபடியும் try பண்ணுங்க! அல்லது Gemini API key சரியா இருக்கா பாருங்க.`,
+        reply: `${characterName}: ஐயோ, படம் load ஆகல 😅 மறுபடியும் try பண்ணுங்க! Home → Keys-ல் Gemini API key add பண்ணுங்க.`,
       });
     }
 
@@ -205,11 +214,10 @@ router.post("/analyze-file", async (req, res) => {
         ? `User uploaded a video (${fileName}). User says: "${userPrompt}". ${characterName} respond in Tamil — describe what you see, be warm and engaging.`
         : `User shared a video. Watch it carefully and react naturally as ${characterName} in Tamil — describe what you see.`;
 
-      const keys = getFileGeminiKeys();
       const videoBuffer = Buffer.from(fileBase64, "base64");
       const videoBlob = new Blob([videoBuffer], { type: mimeType || "video/mp4" });
 
-      for (const key of keys) {
+      for (const key of allGeminiKeys) {
         let uploadedFileName: string | undefined;
         try {
           const ai = new GoogleGenAI({ apiKey: key });
@@ -270,7 +278,7 @@ router.post("/analyze-file", async (req, res) => {
       if (groqReply) return res.json({ reply: groqReply });
 
       return res.json({
-        reply: `${characterName}: வீடியோ பாக்க முடியல 😅 Gemini API key check பண்ணுங்க!`,
+        reply: `${characterName}: வீடியோ பாக்க முடியல 😅 Home → Keys-ல் Gemini API key add பண்ணுங்க!`,
       });
     }
 
@@ -295,10 +303,7 @@ router.post("/analyze-file", async (req, res) => {
             ],
           },
         ];
-        const geminiReply = await tryGeminiKeys(
-          geminiContents,
-          systemInstruction,
-        );
+        const geminiReply = await tryGeminiKeys(geminiContents, systemInstruction, allGeminiKeys);
         if (geminiReply) return res.json({ reply: geminiReply });
 
         const pdfText = (() => {
@@ -337,6 +342,7 @@ router.post("/analyze-file", async (req, res) => {
         const geminiReply = await tryGeminiKeys(
           [{ role: "user", parts: [{ text: docPrompt }] }],
           systemInstruction,
+          allGeminiKeys,
         );
         if (geminiReply) return res.json({ reply: geminiReply, docText });
 
@@ -370,6 +376,7 @@ router.post("/analyze-file", async (req, res) => {
       const geminiReply = await tryGeminiKeys(
         [{ role: "user", parts: [{ text: docPrompt }] }],
         systemInstruction,
+        allGeminiKeys,
       );
       if (geminiReply) return res.json({ reply: geminiReply, docText });
 
