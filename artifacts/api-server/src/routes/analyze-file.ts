@@ -5,16 +5,22 @@ import mammoth from "mammoth";
 const router = Router();
 
 function getServerGeminiKeys(): string[] {
-  const keys: string[] = [];
-  for (let i = 1; i <= 6; i++) {
-    const val =
+  const candidates: (string | undefined)[] = [
+    process.env["GEMINI_API_KEY"],
+    process.env["AI_INTEGRATIONS_GEMINI_API_KEY"],
+  ];
+  for (let i = 1; i <= 12; i++) {
+    candidates.push(
+      process.env[`GEMINI_API_KEY_${i}`] ||
       process.env[`Gemini_key_${i}`] ||
-      process.env[`GEMINI_KEY_${i}`] ||
-      process.env[`Gemini_Key_${i}`];
-    const k = val?.trim();
-    if (k && k.length > 10) keys.push(k);
+      process.env[`GEMINI_KEY_${i}`]
+    );
   }
-  return keys;
+  return [...new Set(
+    candidates
+      .map(k => k?.trim() ?? "")
+      .filter(k => k.length > 10 && k.startsWith("AIza"))
+  )];
 }
 
 function mergeGeminiKeys(clientKeys: string[] = []): string[] {
