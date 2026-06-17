@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter, useFocusEffect } from 'expo-router';
-import { sendMessage, sendToLocalGemma, Message, generateImage, generateImageHuggingFace, listCloudinaryImages, listCloudinaryVideos, analyzeFile } from '../services/api';
+import { sendMessage, sendToLocalGemma, Message, generateImage, generateImageHuggingFace, listCloudinaryImages, listCloudinaryVideos, analyzeFile, uploadUriToCloudinary } from '../services/api';
 
 // Per-style photo cache helpers — same key as ai-girls-cloud.tsx uses
 const stylePhotoCacheKey = (personaId: string, styleId: string) =>
@@ -430,6 +430,12 @@ Each label: 1 sentence max.`;
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [fileLoading, setFileLoading] = useState(false);
+  // ── Staging preview for photo/video before send ──
+  const [stagingMedia, setStagingMedia] = useState<{
+    uri: string; isVideo: boolean; b64: string; mimeType: string; fileName: string;
+  } | null>(null);
+  const [stagingCaption, setStagingCaption] = useState('');
+  const [stagingUploading, setStagingUploading] = useState(false);
   const [showGenModal, setShowGenModal] = useState(false);
   const [genPrompt, setGenPrompt] = useState('');
   const [selectedStyleId, setSelectedStyleId] = useState('normal');
@@ -943,37 +949,15 @@ Each label: 1 sentence max.`;
                 return;
               }
 
-              const userMsg: Message = {
-                id: Date.now().toString(), role: 'user',
-                content: isVideo ? `🎬 Video analyze பண்ணுங்க` : `📷 Photo analyze பண்ணுங்க`,
-                timestamp: new Date(),
-                sentMediaType: isVideo ? 'video' : 'image',
-                sentMediaUri: asset.uri,
-              };
-              setMessages(prev => [...prev, userMsg]);
-              setFileLoading(true);
-
-              try {
-                const { reply } = await analyzeFile({
-                  fileBase64: b64,
-                  fileName: asset.fileName || (isVideo ? 'video.mp4' : 'photo.jpg'),
-                  fileType: isVideo ? 'video' : 'image',
-                  mimeType: asset.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
-                  characterName: persona.name,
-                  characterPrompt: persona.prompt,
-                });
-                setMessages(prev => [...prev, {
-                  id: (Date.now()+1).toString(), role: 'assistant',
-                  content: reply, timestamp: new Date(),
-                }]);
-              } catch (e: any) {
-                const errMsg = e?.message || 'Unknown error';
-                setMessages(prev => [...prev, {
-                  id: (Date.now()+1).toString(), role: 'assistant',
-                  content: `${persona.name}: File analyze பண்ண முடியல 😔\n\nError: ${errMsg}`,
-                  timestamp: new Date(),
-                }]);
-              } finally { setFileLoading(false); }
+              // Show staging preview modal instead of immediate send
+              setStagingCaption('');
+              setStagingMedia({
+                uri: asset.uri,
+                isVideo,
+                b64,
+                mimeType: asset.mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
+                fileName: asset.fileName || (isVideo ? 'video.mp4' : 'photo.jpg'),
+              });
             },
           },
           {
@@ -1050,6 +1034,66 @@ Each label: 1 sentence max.`;
       Alert.alert('Error', 'File pick பண்ண முடியல');
     }
   }, [persona]);
+
+  // ── Send staged photo/video: upload to Cloudinary → analyzeFile ──────────────
+  const sendStagedMedia = useCallback(async () => {
+    if (!stagingMedia || !persona) return;
+    const { uri, isVideo, b64, mimeType, fileName } = stagingMedia;
+    const caption = stagingCaption.trim();
+    setStagingUploading(true);
+
+    try {
+      // 1. Upload to Cloudinary for permanent URL
+      let cloudUrl = uri; // fallback to local if upload fails
+      try {
+        const folder = `chat_media/${persona.name.replace(/\s+/g,'_')}`;
+        const result = await uploadUriToCloudinary(uri, mimeType, folder);
+        cloudUrl = result.url;
+      } catch (upErr: any) {
+        // Cloudinary upload failed — still proceed with local URI display
+        console.warn('[staging] Cloudinary upload failed, using local URI:', upErr?.message);
+      }
+
+      // 2. Add user message with cloudUrl as sentMediaUri
+      const userMsg: Message = {
+        id: Date.now().toString(), role: 'user',
+        content: caption || (isVideo ? '🎬 Video analyze பண்ணுங்க' : '📷 Photo analyze பண்ணுங்க'),
+        timestamp: new Date(),
+        sentMediaType: isVideo ? 'video' : 'image',
+        sentMediaUri: cloudUrl,
+      };
+      setMessages(prev => [...prev, userMsg]);
+      setStagingMedia(null);
+      setStagingCaption('');
+      setFileLoading(true);
+
+      // 3. Analyze with Gemini/Groq
+      const { reply } = await analyzeFile({
+        fileBase64: b64,
+        fileName,
+        fileType: isVideo ? 'video' : 'image',
+        mimeType,
+        userPrompt: caption || undefined,
+        characterName: persona.name,
+        characterPrompt: persona.prompt,
+      });
+      setMessages(prev => [...prev, {
+        id: (Date.now()+1).toString(), role: 'assistant',
+        content: reply, timestamp: new Date(),
+      }]);
+    } catch (e: any) {
+      const errMsg = e?.message || 'Unknown error';
+      setMessages(prev => [...prev, {
+        id: (Date.now()+1).toString(), role: 'assistant',
+        content: `${persona.name}: File analyze பண்ண முடியல 😔\n\nError: ${errMsg}`,
+        timestamp: new Date(),
+      }]);
+    } finally {
+      setStagingUploading(false);
+      setFileLoading(false);
+    }
+  }, [stagingMedia, stagingCaption, persona]);
+
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
@@ -2487,6 +2531,82 @@ Each label: 1 sentence max.`;
           </TouchableOpacity>
         </Modal>
       )}
+
+      {/* ── Staging Preview Modal (Photo/Video before send) ── */}
+      <Modal
+        visible={!!stagingMedia}
+        transparent
+        animationType="slide"
+        onRequestClose={() => { setStagingMedia(null); setStagingCaption(''); }}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 32 }}>
+            {/* Header */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#eee' }}>
+              <Text style={{ fontSize: 17, fontWeight: '700', color: '#111' }}>
+                {stagingMedia?.isVideo ? '🎬 Video Preview' : '📷 Photo Preview'}
+              </Text>
+              <TouchableOpacity onPress={() => { setStagingMedia(null); setStagingCaption(''); }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Text style={{ fontSize: 24, color: '#888' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Preview */}
+            <View style={{ alignItems: 'center', paddingTop: 16, paddingHorizontal: 16 }}>
+              {stagingMedia?.isVideo ? (
+                <View style={{ width: '100%', height: 180, backgroundColor: '#0d0d0d', borderRadius: 16, justifyContent: 'center', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 56 }}>🎬</Text>
+                  <Text style={{ color: '#bbb', fontSize: 13, marginTop: 8 }}>{stagingMedia.fileName}</Text>
+                </View>
+              ) : stagingMedia?.uri ? (
+                <Image
+                  source={{ uri: stagingMedia.uri }}
+                  style={{ width: '100%', height: 240, borderRadius: 16 }}
+                  resizeMode="cover"
+                />
+              ) : null}
+            </View>
+
+            {/* Caption input */}
+            <View style={{ marginHorizontal: 16, marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <TextInput
+                value={stagingCaption}
+                onChangeText={setStagingCaption}
+                placeholder="Caption தமிழ்ல type பண்ணுங்க (optional)…"
+                placeholderTextColor="#aaa"
+                style={{
+                  flex: 1, borderWidth: 1.5, borderColor: '#ddd', borderRadius: 22,
+                  paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, color: '#111',
+                  backgroundColor: '#f8f8f8',
+                }}
+                multiline={false}
+                maxLength={200}
+                editable={!stagingUploading}
+              />
+              <TouchableOpacity
+                onPress={sendStagedMedia}
+                disabled={stagingUploading}
+                style={{
+                  backgroundColor: stagingUploading ? '#aaa' : '#25D366',
+                  borderRadius: 22, paddingVertical: 12, paddingHorizontal: 20,
+                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                }}
+              >
+                {stagingUploading
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15 }}>Send ➤</Text>
+                }
+              </TouchableOpacity>
+            </View>
+            {stagingUploading && (
+              <Text style={{ textAlign: 'center', color: '#075E54', fontSize: 12, marginTop: 8, fontWeight: '600' }}>
+                ☁️ Cloudinary upload → AI analyze பண்றோம்…
+              </Text>
+            )}
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
