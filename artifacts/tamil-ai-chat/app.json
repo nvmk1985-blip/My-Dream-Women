@@ -2,7 +2,7 @@
   "expo": {
     "name": "My Dream Women",
     "slug": "tamil-ai-chat",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "my-girls",
@@ -32,7 +32,7 @@
         "backgroundColor": "#000000"
       },
       "package": "com.smk1.tamilaichat",
-      "versionCode": 62,
+      "versionCode": 63,
       "softwareKeyboardLayoutMode": "adjustResize",
       "permissions": [
         "android.permission.INTERNET",
