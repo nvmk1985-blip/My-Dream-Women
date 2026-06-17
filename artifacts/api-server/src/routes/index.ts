@@ -9,6 +9,7 @@ import faceswapRouter from "./faceswap";
 import imageToPromptRouter from "./image-to-prompt";
 import generateImageRouter from "./generate-image";
 import analyzeFileRouter from "./analyze-file";
+import mediaChatRouter from "./media-chat";
 
 const router: IRouter = Router();
 
@@ -21,6 +22,7 @@ router.use(faceswapRouter);
 router.use(imageToPromptRouter);
 router.use(generateImageRouter);
 router.use(analyzeFileRouter);
+router.use(mediaChatRouter);
 
 // Temporary backup download route
 router.get("/download/backup", (_req, res) => {
