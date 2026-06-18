@@ -595,6 +595,7 @@ export async function analyzeFile(params: {
   userPrompt?: string;
   characterName?: string;
   characterPrompt?: string;
+  imageVideoSystemPrompt?: string;
   mood?: string;
 }): Promise<{ reply: string; docText?: string }> {
   // Read user's active Gemini keys to pass to server (server may not have its own)
