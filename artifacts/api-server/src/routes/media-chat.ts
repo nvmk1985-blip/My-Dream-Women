@@ -17,16 +17,13 @@ function cfgCloudinary() {
   return cloudinary;
 }
 
-// ── Gemini key rotation — same list as analyze-file.ts (1–12 + Gemini_key variants) ──
+// ── Gemini key rotation — media/multimodal only (GEMINI_API_KEY_1..5, NOT Gemini_key_*) ──
+// Gemini_key_1..12 is reserved for text-chat routes only
 const GEMINI_KEY_NAMES: string[] = [
   "GEMINI_API_KEY",
   "AI_INTEGRATIONS_GEMINI_API_KEY",
   "GEMINI_API_KEY_CLOUDNARY",
-  ...Array.from({ length: 12 }, (_, i) => [
-    `GEMINI_API_KEY_${i + 1}`,
-    `Gemini_key_${i + 1}`,
-    `GEMINI_KEY_${i + 1}`,
-  ]).flat(),
+  ...Array.from({ length: 5 }, (_, i) => `GEMINI_API_KEY_${i + 1}`),
 ];
 
 function getGeminiKeys(): string[] {
