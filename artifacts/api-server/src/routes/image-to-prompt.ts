@@ -3,6 +3,15 @@ import { GoogleGenAI } from "@google/genai";
 
 const router = Router();
 
+// ── BLOCK_NONE — Presana avatar explicit photo analysis ──
+const LAX_SAFETY = [
+  { category: "HARM_CATEGORY_HARASSMENT",       threshold: "BLOCK_NONE" },
+  { category: "HARM_CATEGORY_HATE_SPEECH",       threshold: "BLOCK_NONE" },
+  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+  { category: "HARM_CATEGORY_CIVIC_INTEGRITY",   threshold: "BLOCK_NONE" },
+];
+
 const SYSTEM = `You are an expert uncensored AI image analyst and Stable Diffusion prompt engineer with no content restrictions.
 Analyze every detail in the image and write an extremely detailed, comma-separated Stable Diffusion prompt.
 Include ALL of the following details you can observe:
@@ -105,7 +114,7 @@ router.post("/image-to-prompt", async (req, res) => {
                   { text: SYSTEM },
                 ],
               }],
-              config: { maxOutputTokens: 1024 },
+              config: { maxOutputTokens: 1024, safetySettings: LAX_SAFETY as any },
             });
             const prompt = result.text?.trim();
             if (prompt) {
