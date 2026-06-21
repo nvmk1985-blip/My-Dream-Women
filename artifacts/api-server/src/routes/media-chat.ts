@@ -288,8 +288,8 @@ router.post(
 • Real partner மாதிரி இரு — உணர்வோட, personally react பண்ணு`;
 
       const userText = caption
-        ? `இந்த ${isVideo ? "video" : "photo"} பாரு. ${caption}`
-        : `இந்த ${isVideo ? "video" : "photo"} பாரு — என்ன தெரியுது, உனக்கு என்ன தோணுது சொல்லு!`;
+        ? `இது என்னோட ${isVideo ? "video" : "photo"}. ${caption}`
+        : `இது என்னோட ${isVideo ? "video" : "photo"} — என்னைப் பத்தி உனக்கு என்ன தோணுது சொல்லு!`;
 
       // ── 3. AI: Gemini 2.5 Flash → OpenRouter Qwen 2.5 VL fallback ────────────
       let aiResponse: string;
