@@ -21,7 +21,9 @@ router.get("/app-config", (_req, res) => {
     groqKey: process.env["GROQ_KEY"] || null,
     cloudinary: {
       cloudName:
-        process.env["CLOUDINARY_CLOUD_NAME"] || null,
+        process.env["CLOUDINARY_CLOUD_NAME"] ||
+        process.env["CLOUDNARY_USER_NAME"] ||
+        null,
       apiKey:
         process.env["API_KEY"] ||
         process.env["CLOUDINARY_API_KEY"] ||
