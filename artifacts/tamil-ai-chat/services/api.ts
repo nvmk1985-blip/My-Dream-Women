@@ -128,10 +128,10 @@ export async function imageToPrompt(
       const ctrl = new AbortController();
       const tmr = setTimeout(() => ctrl.abort(), 30000);
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
           body: JSON.stringify({
             contents: [{ parts: [
               { inline_data: { mime_type: mime, data: b64 } },
