@@ -1266,13 +1266,17 @@ Each label: 1 sentence max.`;
         // Avatar profiles (Qwen2-VL/Florence-2/LLaVA analyzed — mode-aware)
         if (Object.keys(avatarDescriptions).length > 0) {
           lines.push('\n**[Avatar Profiles — AI-Analyzed Appearance & Personality:]:**');
-          // Character profiles — show mode-specific one first
+          // Character profiles — mode-specific first, then fallback to any available
           if (moodMode === 'presana' && avatarDescriptions.presana)
             lines.push('Character Presana Mode Profile: ' + avatarDescriptions.presana);
           else if (moodMode === 'normal' && avatarDescriptions.normal)
             lines.push('Character Normal Mode Profile: ' + avatarDescriptions.normal);
           else if (avatarDescriptions.main)
             lines.push('Character Profile: ' + avatarDescriptions.main);
+          else if (avatarDescriptions.presana)
+            lines.push('Character Profile: ' + avatarDescriptions.presana);
+          else if (avatarDescriptions.normal)
+            lines.push('Character Profile: ' + avatarDescriptions.normal);
           // User profiles — show mode-specific one
           const activeUserProfile = moodMode === 'presana'
             ? (avatarDescriptions.userPrasana || avatarDescriptions.user)
