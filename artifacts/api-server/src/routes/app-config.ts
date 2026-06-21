@@ -18,6 +18,7 @@ router.get("/app-config", (_req, res) => {
     githubToken: process.env["GITHUB_KEY"] || null,
     hfToken: process.env["HUGGING_FACE_KEY"] || null,
     openrouterKey: process.env["OPEN_ROTTER_API_KEY"] || null,
+    groqKey: process.env["GROQ_KEY"] || null,
     cloudinary: {
       cloudName:
         process.env["CLOUDNARY_USER_NAME"] ||
