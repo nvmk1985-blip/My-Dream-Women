@@ -29,7 +29,9 @@ const DEFAULT_SERVER = 'https://my-dream-women.onrender.com';
 
 const DEFAULT_KEYS: Omit<ApiKeyEntry, 'value' | 'expanded' | 'status'>[] = [
   { id: 'github',     label: 'GitHub Token', site: 'github.com',        enabled: false },
-  { id: 'cloudinary', label: 'Cloudinary',   site: 'cloudinary.com',    enabled: false },
+  { id: 'cloudinary', label: 'Cloudinary Cloud Name', site: 'cloudinary.com', enabled: false },
+  { id: 'cloudinary_api_key', label: 'Cloudinary API Key', site: 'cloudinary.com', enabled: false },
+  { id: 'cloudinary_api_secret', label: 'Cloudinary API Secret', site: 'cloudinary.com', enabled: false },
   { id: 'hf',         label: 'HuggingFace',  site: 'huggingface.co',    enabled: false },
   { id: 'openrouter',  label: 'OpenRouter API', site: 'openrouter.ai',   enabled: false },
   { id: 'img_prompt_gemini', label: '📸 Image to Prompt', site: 'aistudio.google.com', enabled: false },
@@ -388,7 +390,7 @@ export default function KeysScreen() {
       const cfg = await res.json() as {
         githubToken?: string | null; hfToken?: string | null;
         openrouterKey?: string | null;
-        cloudinary?: { cloudName?: string | null };
+        cloudinary?: { cloudName?: string | null; apiKey?: string | null; apiSecret?: string | null };
         geminiKeys?: string[];
       };
       const savedRaw = await AsyncStorage.getItem(KEYS_STORAGE);
@@ -411,6 +413,8 @@ export default function KeysScreen() {
       fill('hf', cfg.hfToken);
       fill('openrouter', cfg.openrouterKey);
       fill('cloudinary', cfg.cloudinary?.cloudName);
+      fill('cloudinary_api_key', cfg.cloudinary?.apiKey);
+      fill('cloudinary_api_secret', cfg.cloudinary?.apiSecret);
 
       if (filled > 0) {
         await AsyncStorage.setItem(KEYS_STORAGE, JSON.stringify(parsed));
