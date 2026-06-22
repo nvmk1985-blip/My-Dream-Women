@@ -318,6 +318,8 @@ export default function ChatScreen() {
     };
 
     // Analyze one image → structured profile (caches per URI, respects user edits)
+    // Primary: Gemini Flash (uses user's existing Gemini keys — no extra setup needed)
+    // Fallback: HuggingFace Qwen2-VL / Florence-2 / LLaVA (if HF key set)
     const analyzeAvatar = async (uri: string, slot: string): Promise<string | null> => {
       if (!uri) return null;
       const cKey = 'avprofile_' + slot + '_' + uri.replace(/[^a-zA-Z0-9]/g,'').slice(-24);
@@ -330,8 +332,16 @@ export default function ChatScreen() {
         if (cached) return cached;
 
         const keysRaw = await AsyncStorage.getItem('api_keys_store');
-        const hfKey = keysRaw ? (JSON.parse(keysRaw)['hf'] ?? '').trim() : '';
-        if (!hfKey) return null;
+        const parsed = keysRaw ? JSON.parse(keysRaw) : {};
+        const hfKey = (parsed['hf'] ?? '').trim();
+        // Gather Gemini keys (gemini_1 … gemini_10 + legacy 'gemini')
+        const geminiKeys: string[] = [];
+        for (let k = 1; k <= 10; k++) {
+          const v = (parsed[`gemini_${k}`] ?? '').trim();
+          if (v) geminiKeys.push(v);
+        }
+        const legacyGem = (parsed['gemini'] ?? '').trim();
+        if (legacyGem && !geminiKeys.includes(legacyGem)) geminiKeys.push(legacyGem);
 
         const base64 = await toBase64(uri);
         if (!base64) return null;
@@ -351,9 +361,36 @@ COMMUNICATION STYLE: (formal/casual/warm/direct/playful)
 
 Each label: 1 sentence max.`;
 
+        // ── Gemini Flash (PRIMARY — uses user's chat Gemini keys) ──────────
+        for (const gKey of geminiKeys) {
+          try {
+            const gRes = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${gKey}`,
+              { method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [
+                  { inlineData: { mimeType: 'image/jpeg', data: base64 } },
+                  { text: PROFILE_PROMPT }
+                ]}]}),
+                signal: AbortSignal.timeout(30000) }
+            );
+            if (gRes.ok) {
+              const gj = await gRes.json() as any;
+              const out: string = gj?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
+              if (out.length > 30) {
+                await AsyncStorage.setItem(cKey, out.slice(0, 800));
+                return out.slice(0, 800);
+              }
+            }
+          } catch {}
+        }
+
+        // ── HuggingFace fallback (only if hfKey set) ───────────────────────
+        if (!hfKey) return null;
+
         const imgContent = { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64}` } };
 
-        // ── Qwen2-VL (primary) ──────────────────────────────
+        // ── Qwen2-VL ──────────────────────────────────────────────────────
         try {
           const r1 = await fetch(
             'https://api-inference.huggingface.co/models/Qwen/Qwen2-VL-7B-Instruct/v1/chat/completions',
@@ -372,7 +409,7 @@ Each label: 1 sentence max.`;
           }
         } catch {}
 
-        // ── Florence-2 (secondary) ────────────────────────────
+        // ── Florence-2 ────────────────────────────────────────────────────
         try {
           const r2 = await fetch(
             'https://api-inference.huggingface.co/models/microsoft/Florence-2-large',
@@ -391,7 +428,7 @@ Each label: 1 sentence max.`;
           }
         } catch {}
 
-        // ── LLaVA (backup) ───────────────────────────────────
+        // ── LLaVA ─────────────────────────────────────────────────────────
         try {
           const r3 = await fetch(
             'https://api-inference.huggingface.co/models/llava-hf/llava-1.5-7b-hf/v1/chat/completions',
