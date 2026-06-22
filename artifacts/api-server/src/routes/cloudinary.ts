@@ -172,4 +172,23 @@ router.get("/cloudinary/videos", async (req, res) => {
   }
 });
 
+
+// ── POST /api/cloudinary/create-folder ────────────────────────────────────
+// Creates a Cloudinary folder using Admin API (requires api_key + api_secret)
+router.post("/create-folder", async (req, res) => {
+  try {
+    const { folderPath } = req.body as { folderPath: string };
+    if (!folderPath) return res.status(400).json({ error: "folderPath required" });
+    await (cfg().api as any).create_folder(folderPath);
+    res.json({ ok: true, folder: folderPath });
+  } catch (err: any) {
+    // Folder may already exist — not an error
+    const msg: string = err?.message || String(err);
+    if (msg.includes("already exists") || msg.includes("409")) {
+      return res.json({ ok: true, folder: req.body.folderPath, existed: true });
+    }
+    res.status(500).json({ error: msg });
+  }
+});
+
 export default router;
