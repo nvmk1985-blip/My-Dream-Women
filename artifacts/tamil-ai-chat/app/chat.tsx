@@ -917,6 +917,15 @@ Each label: 1 sentence max.`;
               const asset = result.assets[0];
               const isVideo = asset.type === 'video';
 
+              // Validate video duration — 30 seconds limit for full analysis
+              if (isVideo && asset.duration && asset.duration > 30000) {
+                Alert.alert(
+                  '⏱️ Video Too Long',
+                  `Video ${(asset.duration / 1000).toFixed(0)} seconds உள்ளது.\n\n✅ 30 seconds-க்கு கீழ் உள்ள clip மட்டும் full analyze ஆகும்.\n\nகுறுகிய clip trim பண்ணி அனுப்புங்க!`
+                );
+                return;
+              }
+
               // Validate file size — video limit 100MB (File API), image 25MB
               const fileSizeMB = (asset.fileSize || 0) / (1024 * 1024);
               const sizeLimit = isVideo ? 100 : 25;
@@ -1096,25 +1105,14 @@ Each label: 1 sentence max.`;
         return;
       }
 
-      // For video: use Cloudinary thumbnail URL (frame at 0s, 800px wide, JPEG)
-      // so_0 = seek to 0 seconds, w_800 = resize width, f_jpg = JPEG format
-      // This converts: /video/upload/v123/vid.mp4 → /video/upload/so_0,w_800/v123/vid.jpg
-      // Analyze the thumbnail as an IMAGE — fast, no Render timeout issues!
-      let analyzeUrl = cloudUrl;
-      let analyzeFileType: string = isVideo ? 'video' : 'image';
-      let analyzeMimeType = mimeType;
-
-      if (isVideo && cloudUploadSucceeded) {
-        analyzeUrl = cloudUrl
-          .replace('/video/upload/', '/video/upload/so_0,w_800/')
-          .replace(/\.(mp4|mov|avi|mkv|webm)(\?.*)?$/, '.jpg');
-        analyzeFileType = 'image';
-        analyzeMimeType = 'image/jpeg';
-      }
+      // Full video URL → server downloads → Gemini File API analyzes entire video
+      const analyzeUrl = cloudUrl;
+      const analyzeFileType: string = isVideo ? 'video' : 'image';
+      const analyzeMimeType = mimeType;
 
       const { reply } = await analyzeFile({
         ...(cloudUploadSucceeded
-          ? { fileUrl: analyzeUrl }         // ✅ URL only — thumbnail for video, image URL for photo
+          ? { fileUrl: analyzeUrl }         // ✅ Full Cloudinary URL — server does full video analysis
           : { fileBase64: b64 }             // image fallback only (video blocked above)
         ),
         fileName,
