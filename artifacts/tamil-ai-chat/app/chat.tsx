@@ -334,14 +334,13 @@ export default function ChatScreen() {
         const keysRaw = await AsyncStorage.getItem('api_keys_store');
         const parsed = keysRaw ? JSON.parse(keysRaw) : {};
         const hfKey = (parsed['hf'] ?? '').trim();
-        // Gather Gemini keys (gemini_1 … gemini_10 + legacy 'gemini')
+        // Avatar analysis: Multimedia Gemini keys ONLY (multimedia_gemini_1…5)
+        // Chat keys (gemini_1…13) reserved for chat — not used here
         const geminiKeys: string[] = [];
-        for (let k = 1; k <= 10; k++) {
-          const v = (parsed[`gemini_${k}`] ?? '').trim();
+        for (let k = 1; k <= 5; k++) {
+          const v = (parsed[`multimedia_gemini_${k}`] ?? '').trim();
           if (v) geminiKeys.push(v);
         }
-        const legacyGem = (parsed['gemini'] ?? '').trim();
-        if (legacyGem && !geminiKeys.includes(legacyGem)) geminiKeys.push(legacyGem);
 
         const base64 = await toBase64(uri);
         if (!base64) return null;
