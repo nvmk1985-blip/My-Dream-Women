@@ -461,8 +461,9 @@ export default function KeysScreen() {
       const enabledMap = enabledRaw ? JSON.parse(enabledRaw) : {};
       let changed = false;
 
+      // Server values always win — Render-ல் set ஆனது correct value
       const maybeSet = (key: string, val: string | null | undefined) => {
-        if (val && !parsed[key]) { parsed[key] = val; enabledMap[key] = true; changed = true; }
+        if (val) { parsed[key] = val; enabledMap[key] = true; changed = true; }
       };
 
       maybeSet('github', cfg.githubToken);
@@ -476,6 +477,11 @@ export default function KeysScreen() {
         cfg.geminiKeys.forEach((val: string, i: number) => {
           maybeSet(`gemini_${i + 1}`, val);
         });
+        // Fill multimedia_gemini_1..5 from Render Multimedia group (GEMINI_API_KEY_1-5)
+        for (let i = 0; i < 5 && i < cfg.geminiKeys.length; i++) {
+          const val = cfg.geminiKeys[i];
+          if (val) { parsed[`multimedia_gemini_${i + 1}`] = val; enabledMap[`multimedia_gemini_${i + 1}`] = true; changed = true; }
+        }
       }
 
       if (changed) {
