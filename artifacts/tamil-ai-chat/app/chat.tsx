@@ -2087,35 +2087,35 @@ Each label: 1 sentence max.`;
                   const isSelected = style.id === selectedStyleId;
                   const isCustom = style.id.startsWith('custom_');
                   return (
-                    <TouchableOpacity
-                      key={style.id}
-                      style={[styles.styleRowFull, isSelected && styles.styleRowSelected]}
-                      onPress={() => {
-                        setSelectedStyleId(style.id);
-                        setShowGeneratePanel(false);
-                        handleShowGalleryInChat(style.id);
-                      }}
-                      onLongPress={() => {
-                        if (isCustom) {
-                          Alert.alert(
-                            'Delete custom style?',
-                            `"${style.label}" நீக்கணுமா?`,
-                            [
-                              { text: 'Cancel', style: 'cancel' },
-                              { text: 'Delete', style: 'destructive', onPress: () => removeCustomStyle(style.id) },
-                            ],
-                          );
-                        }
-                      }}
-                    >
-                      <View style={[styles.styleRadio, isSelected && styles.styleRadioSelected]}>
-                        {isSelected && <View style={styles.styleRadioDot} />}
-                      </View>
-                      <Text style={[styles.styleRowFullLabel, isSelected && styles.styleLabelSelected]} numberOfLines={1}>
-                        {isCustom ? '★ ' : ''}{style.label}
-                      </Text>
-                      <Text style={styles.styleRowArrow}>›</Text>
-                    </TouchableOpacity>
+                    <View key={style.id} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <TouchableOpacity
+                        style={[styles.styleRowFull, isSelected && styles.styleRowSelected, { flex: 1 }]}
+                        onPress={() => {
+                          setSelectedStyleId(style.id);
+                          setShowGeneratePanel(false);
+                          handleShowGalleryInChat(style.id);
+                        }}
+                      >
+                        <View style={[styles.styleRadio, isSelected && styles.styleRadioSelected]}>
+                          {isSelected && <View style={styles.styleRadioDot} />}
+                        </View>
+                        <Text style={[styles.styleRowFullLabel, isSelected && styles.styleLabelSelected]} numberOfLines={1}>
+                          {isCustom ? '★ ' : ''}{style.label}
+                        </Text>
+                        <Text style={styles.styleRowArrow}>›</Text>
+                      </TouchableOpacity>
+                      {isCustom && (
+                        <TouchableOpacity
+                          onPress={() => Alert.alert('Style நீக்கு', `"${style.label}" delete பண்ணணுமா?`, [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Delete', style: 'destructive', onPress: () => removeCustomStyle(style.id) },
+                          ])}
+                          style={{ paddingHorizontal: 12, paddingVertical: 14 }}
+                        >
+                          <Text style={{ fontSize: 18, color: '#e53935' }}>🗑️</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   );
                 })}
               </ScrollView>
