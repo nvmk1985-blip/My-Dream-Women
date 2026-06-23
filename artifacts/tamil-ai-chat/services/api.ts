@@ -641,16 +641,27 @@ export async function analyzeFile(params: {
 const PLACEHOLDER_PNG_B64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
-export async function createCloudinaryFolder(folderPath: string): Promise<void> {
+export async function createCloudinaryFolder(folderPath: string): Promise<boolean> {
   try {
+    if (!folderPath || folderPath.endsWith('/')) {
+      console.warn('[createCloudinaryFolder] invalid path:', folderPath);
+      return false;
+    }
     const endpoint = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`;
     const form = new FormData();
     form.append('file', `data:image/png;base64,${PLACEHOLDER_PNG_B64}`);
     form.append('upload_preset', CLOUDINARY_PRESET);
     form.append('folder', folderPath);
-    form.append('public_id', '.folder_init');
-    await fetch(endpoint, { method: 'POST', body: form });
+    form.append('public_id', '.keep');
+    const res = await fetch(endpoint, { method: 'POST', body: form });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      console.warn('[createCloudinaryFolder] HTTP', res.status, folderPath, txt.substring(0, 100));
+      return false;
+    }
+    return true;
   } catch (e) {
-    console.warn('[createCloudinaryFolder] failed:', e);
+    console.warn('[createCloudinaryFolder] failed:', folderPath, e);
+    return false;
   }
 }
