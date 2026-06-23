@@ -1665,9 +1665,8 @@ Then write these prompts:
                 placeholderTextColor="#aaa" textAlignVertical="top" />
 
               <Text style={{ fontSize: 10, color: '#888', marginTop: 8, marginBottom: 12, lineHeight: 15 }}>
-                📁 Cloudinary: my-girls/{பெயர்}/ + {PHOTO_FOLDERS.length} photo style folders auto-create ஆகும்{'
-'}
-                💾 AsyncStorage-ல் save ஆகும்
+                {'📁 Cloudinary: my-girls/பெயர்/ + '}{PHOTO_FOLDERS.length}{' photo style folders auto-create ஆகும்
+💾 AsyncStorage-ல் save ஆகும்'}
               </Text>
 
               <View style={{ flexDirection: 'row', gap: 10 }}>
