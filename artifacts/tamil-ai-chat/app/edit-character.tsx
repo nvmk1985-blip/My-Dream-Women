@@ -152,6 +152,13 @@ export default function EditCharacterScreen() {
         const v = (parsed[`multimedia_gemini_${k}`] ?? '').trim();
         if (v) geminiKeys.push(v);
       }
+      // Fallback: use regular chat gemini keys if multimedia keys not configured
+      if (geminiKeys.length === 0) {
+        for (let k = 1; k <= 13; k++) {
+          const v = (parsed[`gemini_${k}`] ?? '').trim();
+          if (v) geminiKeys.push(v);
+        }
+      }
       if (geminiKeys.length === 0) return;
 
       const prompt = `Look at this photo and describe the person in three short English phrases (each under 15 words):
