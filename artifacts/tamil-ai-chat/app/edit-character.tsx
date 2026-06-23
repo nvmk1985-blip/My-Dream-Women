@@ -39,6 +39,7 @@ export default function EditCharacterScreen() {
   const [greeting, setGreeting] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [charOnly, setCharOnly] = useState('');
+  const [defaultPromptExists, setDefaultPromptExists] = useState(false);
   const [baseVisible, setBaseVisible] = useState(false);
   const [faceDesc, setFaceDesc] = useState('');
   const [bodyDesc, setBodyDesc] = useState('');
@@ -85,7 +86,12 @@ export default function EditCharacterScreen() {
         const fullPr = data.prompt ?? base.prompt;
         setSystemPrompt(fullPr);
         const mIdx = fullPr.indexOf('**இப்போ உன்னோட character:**');
-        setCharOnly(mIdx !== -1 ? fullPr.slice(mIdx + '**இப்போ உன்னோட character:**'.length).trimStart() : fullPr);
+        const parsedCharOnly = mIdx !== -1 ? fullPr.slice(mIdx + '**இப்போ உன்னோட character:**'.length).trimStart() : fullPr;
+        const defPrompt = await AsyncStorage.getItem('default_char_prompt');
+        if (defPrompt) setDefaultPromptExists(true);
+        // Auto-load default if charOnly is empty or looks like a bare auto-generated prompt (no newlines, short)
+        const isBarePrompt = parsedCharOnly.trim().length < 120 && !parsedCharOnly.includes('\n');
+        setCharOnly(isBarePrompt && defPrompt ? defPrompt : parsedCharOnly);
         setFaceDesc(data.faceDesc ?? base.faceDesc ?? '');
         setBodyDesc(data.bodyDesc ?? base.bodyDesc ?? '');
         setAttireDesc(data.attireDesc ?? base.attireDesc ?? '');
@@ -138,6 +144,19 @@ export default function EditCharacterScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const saveDefaultPrompt = async () => {
+    if (!charOnly.trim()) { Alert.alert('Prompt இல்லை', 'Green box-ல் முதலில் prompt type பண்ணுங்க'); return; }
+    await AsyncStorage.setItem('default_char_prompt', charOnly.trim());
+    setDefaultPromptExists(true);
+    Alert.alert('✅ Default Save ஆச்சு!', 'இந்த prompt புதிய characters-க்கு green box-ல் auto-load ஆகும்.');
+  };
+
+  const loadDefaultPrompt = async () => {
+    const def = await AsyncStorage.getItem('default_char_prompt');
+    if (def) { setCharOnly(def); Alert.alert('📋 Loaded!', 'Default prompt green box-ல் load ஆச்சு.'); }
+    else Alert.alert('Default இல்லை', 'முதலில் ஒரு prompt-ஐ ⭐ Default Save பண்ணுங்க.');
   };
 
   // Auto-analyze uploaded avatar → fill Face/Body/Attire fields using Gemini
@@ -680,7 +699,23 @@ ATTIRE: ...`;
               {/* 🟢 GREEN — CHARACTER-SPECIFIC (always visible, editable) */}
               <View style={{ borderWidth: 2, borderColor: '#2e7d32', borderRadius: 8, overflow: 'hidden' }}>
                 <View style={{ backgroundColor: '#e8f5e9', paddingHorizontal: 12, paddingVertical: 8 }}>
-                  <Text style={{ color: '#1b5e20', fontWeight: '700', fontSize: 12 }}>🟢 இந்த CHARACTER மட்டும் (திருத்தலாம்)</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={{ color: '#1b5e20', fontWeight: '700', fontSize: 12 }}>🟢 இந்த CHARACTER மட்டும் (திருத்தலாம்)</Text>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      <TouchableOpacity
+                        onPress={saveDefaultPrompt}
+                        style={{ backgroundColor: '#2e7d32', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}
+                      >
+                        <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>⭐ Default Save</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={loadDefaultPrompt}
+                        style={{ backgroundColor: defaultPromptExists ? '#1565C0' : '#aaa', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}
+                      >
+                        <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>📋 Load Default</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                   <Text style={{ color: '#388e3c', fontSize: 10, marginTop: 2 }}>✏️ Long-press → Cut / Copy / Paste / Select All</Text>
                 </View>
                 <TextInput
