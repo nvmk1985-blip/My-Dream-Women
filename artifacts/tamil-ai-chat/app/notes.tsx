@@ -561,21 +561,35 @@ export default function NotesScreen() {
                 {ALL_STYLES.map((st, i) => {
                   const isCustom = i >= BUILTIN_PHOTO_STYLES.length;
                   const customId = isCustom ? customStyles[i - BUILTIN_PHOTO_STYLES.length]?.id : null;
+                  const accent = ACCENT_COLORS[i % ACCENT_COLORS.length];
+                  if (isCustom && customId) {
+                    return (
+                      <View key={st + i} style={{ flexDirection: 'column', alignItems: 'center', marginRight: 4 }}>
+                        <TouchableOpacity
+                          style={[s.styleChip, { borderColor: accent }]}
+                          onPress={() => addPage(st, accent)}
+                        >
+                          <Text style={[s.styleChipTxt, { color: accent }]}>{'★ ' + st}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => Alert.alert('Style நீக்கு', '"' + st + '" delete பண்ணணுமா?', [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Delete', style: 'destructive', onPress: () => { removeCustomStyle(customId); showToast('"' + st + '" நீக்கப்பட்டது'); } },
+                          ])}
+                          style={{ paddingHorizontal: 6, paddingVertical: 2 }}
+                        >
+                          <Text style={{ fontSize: 14, color: '#e53935' }}>{'🗑️'}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  }
                   return (
                     <TouchableOpacity
                       key={st + i}
-                      style={[s.styleChip, { borderColor: ACCENT_COLORS[i % ACCENT_COLORS.length] }]}
-                      onPress={() => addPage(st, ACCENT_COLORS[i % ACCENT_COLORS.length])}
-                      onLongPress={() => {
-                        if (customId) {
-                          removeCustomStyle(customId);
-                          showToast(`"${st}" நீக்கப்பட்டது`);
-                        }
-                      }}
+                      style={[s.styleChip, { borderColor: accent }]}
+                      onPress={() => addPage(st, accent)}
                     >
-                      <Text style={[s.styleChipTxt, { color: ACCENT_COLORS[i % ACCENT_COLORS.length] }]}>
-                        {isCustom ? '★ ' : ''}{st}
-                      </Text>
+                      <Text style={[s.styleChipTxt, { color: accent }]}>{st}</Text>
                     </TouchableOpacity>
                   );
                 })}
