@@ -6,8 +6,8 @@ const router = Router();
 function cfg() {
   cloudinary.config({
     cloud_name: process.env["CLOUDINARY_CLOUD_NAME"],
-    api_key:    process.env["API_KEY"],
-    api_secret: process.env["API_SECRET"],
+    api_key:    process.env["API_KEY"] || process.env["CLOUDINARY_API_KEY"],
+    api_secret: process.env["API_SECRET"] || process.env["CLOUDINARY_API_SECRET"],
   });
   return cloudinary;
 }
@@ -175,19 +175,45 @@ router.get("/cloudinary/videos", async (req, res) => {
 
 // ── POST /api/cloudinary/create-folder ────────────────────────────────────
 // Creates a Cloudinary folder using Admin API (requires api_key + api_secret)
+// PLACEHOLDER_PNG: 1x1 transparent PNG (base64)
+const PLACEHOLDER_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
 router.post("/cloudinary/create-folder", async (req, res) => {
+  const { folderPath } = req.body as { folderPath: string };
+  if (!folderPath || folderPath.endsWith('/')) {
+    return res.status(400).json({ error: "folderPath required" });
+  }
+  const cl = cfg();
+
+  // Method 1: Admin API create_folder (fastest, no asset created)
   try {
-    const { folderPath } = req.body as { folderPath: string };
-    if (!folderPath) return res.status(400).json({ error: "folderPath required" });
-    await (cfg().api as any).create_folder(folderPath);
-    res.json({ ok: true, folder: folderPath });
+    await (cl.api as any).create_folder(folderPath);
+    return res.json({ ok: true, folder: folderPath, method: 'admin' });
   } catch (err: any) {
-    // Folder may already exist — not an error
-    const msg: string = err?.message || String(err);
-    if (msg.includes("already exists") || msg.includes("409")) {
-      return res.json({ ok: true, folder: req.body.folderPath, existed: true });
+    const msg: string = err?.message || err?.error?.message || JSON.stringify(err).slice(0, 300);
+    // Already exists = success
+    if (msg.includes('already exists') || (err?.http_code ?? err?.error?.http_code) === 409) {
+      return res.json({ ok: true, folder: folderPath, existed: true });
     }
-    res.status(500).json({ error: msg });
+    req.log.warn({ err: msg, folderPath }, 'Admin create_folder failed, trying upload fallback');
+  }
+
+  // Method 2: Unsigned upload fallback — upload tiny placeholder to create folder
+  try {
+    await cl.uploader.unsigned_upload(
+      `data:image/png;base64,${PLACEHOLDER_B64}`,
+      PRESET_NAME,
+      { folder: folderPath, public_id: '.keep', overwrite: false, resource_type: 'image' }
+    );
+    return res.json({ ok: true, folder: folderPath, method: 'upload' });
+  } catch (err2: any) {
+    const msg2: string = err2?.message || err2?.error?.message || JSON.stringify(err2).slice(0, 300);
+    // Already exists = success
+    if (msg2.includes('already exists') || (err2?.http_code ?? err2?.error?.http_code) === 409) {
+      return res.json({ ok: true, folder: folderPath, existed: true, method: 'upload' });
+    }
+    req.log.error({ err: msg2, folderPath }, 'Both folder creation methods failed');
+    return res.status(500).json({ error: msg2, folderPath });
   }
 });
 
