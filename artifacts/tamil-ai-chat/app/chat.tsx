@@ -265,13 +265,27 @@ export default function ChatScreen() {
   const [userBehaviour, setUserBehaviour] = useState('');
 
   const reloadPersona = useCallback(async () => {
+    // Step 1: Look up built-in personas first
     const base = ALL_PERSONAS.find(p => p.id === personaId);
-    if (!base) return;
+
+    // Step 2: If not found, look up custom personas from AsyncStorage
+    let custom: any = null;
+    if (!base) {
+      try {
+        const raw = await AsyncStorage.getItem('custom_personas');
+        const list = raw ? JSON.parse(raw) : [];
+        custom = list.find((p: any) => p.id === personaId) ?? null;
+      } catch {}
+    }
+
+    const finalPersona = base || custom;
+    if (!finalPersona) return; // truly not found
+
     try {
-      const saved = await AsyncStorage.getItem(`persona_edit_${base.id}`);
+      const saved = await AsyncStorage.getItem(`persona_edit_${finalPersona.id}`);
       if (saved) {
         const data = JSON.parse(saved);
-        setPersona({ ...base, ...data, prompt: data.prompt ?? base.prompt });
+        setPersona({ ...finalPersona, ...data, prompt: data.prompt ?? finalPersona.prompt });
         setAvatarUri(data.avatarPhotoUri);
         setNormalAvatarUri(data.normalAvatarUri);
         setPresanaAvatarUri(data.presanaAvatarUri);
@@ -285,11 +299,11 @@ export default function ChatScreen() {
         setAvatarReflectionPrompt(data.avatarReflectionPrompt ?? '');
         setImageVideoSystemPrompt(data.imageVideoPrompt ?? '');
       } else {
-        setPersona(base);
-        setAvatarUri(base.avatarPhotoUri);
+        setPersona(finalPersona);
+        setAvatarUri(finalPersona.avatarPhotoUri);
       }
     } catch {
-      setPersona(base);
+      setPersona(finalPersona);
     }
   }, [personaId]);
 
