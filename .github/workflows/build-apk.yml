@@ -38,14 +38,18 @@ jobs:
       - name: Install dependencies (workspace root)
         run: pnpm install --no-frozen-lockfile
 
-      - name: Install EAS CLI
-        run: pnpm add -g eas-cli
+      - name: Setup Java (required for local Android build)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-      - name: Build APK via EAS
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Build APK locally (no Expo account needed)
         working-directory: artifacts/tamil-ai-chat
-        run: eas build --platform android --profile ${{ github.event.inputs.profile || 'production' }} --non-interactive --output ./build.apk
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas build --platform android --profile ${{ github.event.inputs.profile || 'production' }} --non-interactive --local --output ./build.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
