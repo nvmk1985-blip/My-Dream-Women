@@ -62,7 +62,7 @@ jobs:
 
       - name: Set versionCode from run number
         run: |
-          VERSION_CODE=$((61 + ${{ github.run_number }}))
+          VERSION_CODE=${{ github.run_number }}
           node -e "
             const fs = require('fs');
             const p = 'artifacts/tamil-ai-chat/app.json';
