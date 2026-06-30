@@ -272,7 +272,7 @@ export default function ChatScreen() {
     let custom: any = null;
     if (!base) {
       try {
-        const raw = await AsyncStorage.getItem('custom_personas');
+        const raw = await AsyncStorage.getItem('custom_personas_v1');
         const list = raw ? JSON.parse(raw) : [];
         custom = list.find((p: any) => p.id === personaId) ?? null;
       } catch {}
@@ -1680,6 +1680,7 @@ Each label: 1 sentence max.`;
       const { imageToPrompt: _itp } = await import('../services/api');
       const _prompt = await _itp(imageUrl);
       setPromptText(_prompt || '');
+      setGenPrompt(_prompt || '');  // Auto-fill Generate box
     } catch (err: any) {
       setPromptText('❌ ' + (err.message || 'Prompt generate ஆகவில்லை. மீண்டும் try பண்ணுங்க.'));
     }

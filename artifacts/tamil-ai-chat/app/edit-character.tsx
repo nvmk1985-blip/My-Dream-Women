@@ -209,9 +209,17 @@ ATTIRE: ...`;
               const faceMatch = out.match(/FACE:\s*(.+)/i);
               const bodyMatch = out.match(/BODY:\s*(.+)/i);
               const attireMatch = out.match(/ATTIRE:\s*(.+)/i);
-              if (faceMatch?.[1]) setFaceDesc(faceMatch[1].trim());
-              if (bodyMatch?.[1]) setBodyDesc(bodyMatch[1].trim());
-              if (attireMatch?.[1]) setAttireDesc(attireMatch[1].trim());
+              const face = faceMatch?.[1]?.trim() ?? '';
+              const body = bodyMatch?.[1]?.trim() ?? '';
+              const attire = attireMatch?.[1]?.trim() ?? '';
+              if (face) setFaceDesc(face);
+              if (body) setBodyDesc(body);
+              if (attire) setAttireDesc(attire);
+              // Auto-fill imageVideoPrompt with avatar appearance as context
+              const avatarCtx = [face, body, attire].filter(Boolean).join('. ');
+              if (avatarCtx) {
+                setImageVideoPrompt(`Character avatar: ${avatarCtx}\n\n${DEFAULT_IMAGE_VIDEO_PROMPT}`);
+              }
               return;
             }
           }

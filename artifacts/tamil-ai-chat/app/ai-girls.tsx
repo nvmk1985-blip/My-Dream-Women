@@ -376,6 +376,20 @@ AsyncStorage-ல் save ஆச்சு!`
     }).catch(() => {});
   }, []);
 
+  // AI body analysis helper — calls imageToPrompt and appends result to editUserBehaviour
+  const analyzeAndFillUserBodyDesc = async (url: string, storageKey: string) => {
+    try {
+      const desc = await imageToPrompt(url);
+      if (desc && desc.length > 10 && !desc.startsWith('❌')) {
+        setEditUserBehaviour(prev => {
+          const current = prev.trim();
+          return current ? `${current}\n[Body: ${desc}]` : `[Body: ${desc}]`;
+        });
+        await AsyncStorage.setItem(storageKey, desc);
+      }
+    } catch {}
+  };
+
   // Pick User Normal avatar photo
   const pickUserNormalPhoto = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -398,6 +412,8 @@ AsyncStorage-ல் save ஆச்சு!`
         const toRemove = keys.filter(k=>k.startsWith('avprofile_usrnorm'));
         if(toRemove.length) await AsyncStorage.multiRemove(toRemove);
         Alert.alert('✅ Normal Avatar Saved!', 'Chat-ல் Normal mode-ல் இந்த photo profile use ஆகும்.');
+        // AI body analysis → append to behaviour textarea
+        analyzeAndFillUserBodyDesc(url, 'user_normal_body_desc').catch(() => {});
       } catch {
         setUserNormalPhoto(asset.uri);
         await AsyncStorage.setItem('user_normal_photo', asset.uri);
@@ -426,6 +442,8 @@ AsyncStorage-ல் save ஆச்சு!`
         const toRemove = keys.filter(k=>k.startsWith('avprofile_usrpres'));
         if(toRemove.length) await AsyncStorage.multiRemove(toRemove);
         Alert.alert('✅ Prasana Avatar Saved!', 'Chat-ல் Prasana mode-ல் இந்த photo profile use ஆகும்.');
+        // AI body analysis → append to behaviour textarea
+        analyzeAndFillUserBodyDesc(url, 'user_prasana_body_desc').catch(() => {});
       } catch {
         setUserPrasanaPhoto(asset.uri);
         await AsyncStorage.setItem('user_prasana_photo', asset.uri);
