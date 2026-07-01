@@ -1,6 +1,8 @@
-// APK-ல் absolute URL வேணும் — EXPO_PUBLIC_API_URL set பண்ணுங்க
-// Web/dev-ல் empty string → relative URL (proxy works automatically)
-const REPLIT_API: string = (process.env['EXPO_PUBLIC_API_URL'] ?? '').replace(/\/$/, '');
+// APK-ல் EXPO_PUBLIC_API_URL set பண்ணுங்க.
+// Dev/web-ல் EXPO_PUBLIC_DOMAIN use செய்கிறோம் (Expo dev server-ஐ hit செய்யாம API server-ஐ hit செய்ய).
+const _explicitApi = (process.env['EXPO_PUBLIC_API_URL'] ?? '').replace(/\/$/, '');
+const _domain = (process.env['EXPO_PUBLIC_DOMAIN'] ?? '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+const REPLIT_API: string = _explicitApi || (_domain ? `https://${_domain}` : '');
 
 // Local Gemma server (OpenAI-compatible format — PocketPal AI, Jan, llama.cpp etc.)
 export async function sendToLocalGemma(
@@ -47,7 +49,6 @@ export interface Message {
   galleryLabel?: string;
   sentMediaType?: 'image' | 'video';
   sentMediaUri?: string;
-  caption?: string;
 }
 
 // ── Gemini key rotation helper ─────────────────────────────────
@@ -128,10 +129,10 @@ export async function imageToPrompt(
       const ctrl = new AbortController();
       const tmr = setTimeout(() => ctrl.abort(), 30000);
       const res = await fetch(
-        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [
               { inline_data: { mime_type: mime, data: b64 } },
@@ -218,7 +219,7 @@ export async function sendMessage(
   // Try each client key in order
   for (const key of tryKeysOrdered.length > 0 ? tryKeysOrdered : [undefined as any]) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 65000);
+    const timer = setTimeout(() => controller.abort(), 30000);
     try {
       const res = await fetch(`${REPLIT_API}/api/chat`, {
         method: 'POST',
@@ -249,7 +250,7 @@ export async function sendMessage(
   // All client keys exhausted — let server try with its own keys (no clientApiKey)
   if (lastError?.message === 'quota' && tryKeysOrdered.length > 0) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 65000);
+    const timer = setTimeout(() => controller.abort(), 30000);
     try {
       const res = await fetch(`${REPLIT_API}/api/chat`, {
         method: 'POST',
@@ -315,9 +316,9 @@ export async function generateImage(params: {
 const CLOUDINARY_CLOUD = 'dazmrxsyc';
 const CLOUDINARY_PRESET = 'my_girls_upload';
 
-// URI-based upload — expo-file-system/legacy uploadAsync (required for v19+).
-// Handles content://, file://, ph:// URIs natively on Android/iOS.
-// Falls back to fetch FormData for edge cases.
+// URI-based upload — uses expo-file-system/legacy uploadAsync which natively
+// handles file://, content://, ph:// URIs on Android/HMOS via ContentResolver.
+// Falls back to RN FormData blob if legacy upload fails (covers iOS/web).
 export async function uploadUriToCloudinary(
   uri: string,
   mimeType: string = 'image/jpeg',
@@ -327,9 +328,8 @@ export async function uploadUriToCloudinary(
   const endpoint = isVideo
     ? `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/video/upload`
     : `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`;
-  const ext = isVideo ? 'mp4' : 'jpg';
 
-  // Primary: legacy uploadAsync — best for content:// URIs on Android
+  // Primary path — legacy FileSystem.uploadAsync (best for content:// on HMOS)
   try {
     const Legacy = await import('expo-file-system/legacy');
     const res = await Legacy.uploadAsync(endpoint, uri, {
@@ -347,13 +347,14 @@ export async function uploadUriToCloudinary(
     const data = JSON.parse(res.body) as any;
     return { url: data.secure_url, public_id: data.public_id, width: data.width, height: data.height };
   } catch (legacyErr: any) {
-    // Fallback: fetch FormData (works for file:// URIs and iOS)
+    // Fallback — RN FormData blob (works for file:// URIs)
+    const ext = isVideo ? 'mp4' : 'jpg';
     const form = new FormData();
     form.append('file', { uri, type: mimeType, name: `upload.${ext}` } as any);
     form.append('upload_preset', CLOUDINARY_PRESET);
     form.append('folder', folder);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 120000);
+    const timer = setTimeout(() => controller.abort(), 90000);
     try {
       const res = await fetch(endpoint, { method: 'POST', body: form, signal: controller.signal });
       if (!res.ok) {
@@ -429,11 +430,12 @@ export async function listCloudinaryVideos(
       `${REPLIT_API}/api/cloudinary/videos?folder=${encodeURIComponent(folder)}`,
       { signal: controller.signal },
     );
+    // HTTP error (non-2xx) → treat as empty folder, not a crash
     if (!res.ok) return [];
     const data = await res.json() as any;
     return data.videos || [];
-  } catch {
-    return [];
+    // Network errors (AbortError = timeout, TypeError = offline) propagate to caller
+    // so caller can distinguish "server sleeping" from "truly empty"
   } finally {
     clearTimeout(timer);
   }
@@ -587,41 +589,22 @@ export async function generateImageHuggingFace(
 
 // ── File Analysis — uses dedicated server-side Gemini_key_1..6 + groq_key ────
 export async function analyzeFile(params: {
-  fileBase64?: string;
-  fileUrl?: string;
+  fileBase64: string;
   fileName: string;
   fileType: 'image' | 'video' | 'document';
   mimeType: string;
   userPrompt?: string;
   characterName?: string;
   characterPrompt?: string;
-  imageVideoSystemPrompt?: string;
   mood?: string;
 }): Promise<{ reply: string; docText?: string }> {
-  // Read user's active Gemini keys to pass to server (server may not have its own)
-  let clientGeminiKeys: string[] = [];
-  try {
-    const AS = (await import('@react-native-async-storage/async-storage')).default;
-    const [saved, enabledRaw] = await Promise.all([
-      AS.getItem('api_keys_store').catch(() => null),
-      AS.getItem('api_keys_enabled_v1').catch(() => null),
-    ]);
-    const parsed = saved ? JSON.parse(saved) as Record<string, string> : {};
-    const enabled = enabledRaw ? JSON.parse(enabledRaw) as Record<string, boolean> : {};
-    // multimedia_gemini_1…5 — dedicated keys for image/video/document analysis
-    for (let i = 1; i <= 5; i++) {
-      const k = parsed[`multimedia_gemini_${i}`];
-      if (k?.trim() && enabled[`multimedia_gemini_${i}`] !== false) clientGeminiKeys.push(k.trim());
-    }
-  } catch {}
-
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90000);
   try {
     const res = await fetch(`${REPLIT_API}/api/analyze-file`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...params, clientGeminiKeys }),
+      body: JSON.stringify(params),
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -634,29 +617,5 @@ export async function analyzeFile(params: {
   } catch (e: any) {
     clearTimeout(timer);
     throw e;
-  }
-}
-
-// ── Create Cloudinary folder via server Admin API ──────────────────────────
-export async function createCloudinaryFolder(folderPath: string): Promise<boolean> {
-  try {
-    if (!folderPath || folderPath.endsWith('/')) {
-      console.warn('[createCloudinaryFolder] invalid path:', folderPath);
-      return false;
-    }
-    const res = await fetch(`${REPLIT_API}/api/cloudinary/create-folder`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ folderPath }),
-    });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      console.warn('[createCloudinaryFolder] server error', res.status, folderPath, txt.slice(0,100));
-      return false;
-    }
-    return true;
-  } catch (e) {
-    console.warn('[createCloudinaryFolder] failed:', folderPath, e);
-    return false;
   }
 }
