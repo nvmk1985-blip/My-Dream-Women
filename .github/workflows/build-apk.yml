@@ -199,7 +199,7 @@ jobs:
           gh release delete "$TAG" --yes --repo ${{ github.repository }} 2>/dev/null || true
           gh release create "$TAG" "$APK_NAME" \
             --title "My Dream Women — Build ${{ github.run_number }}" \
-            --notes "Build ${{ github.run_number }} — versionCode $((61 + ${{ github.run_number }}))" \
+            --notes "Build ${{ github.run_number }} — versionCode ${{ github.run_number }}" \
             --latest \
             --repo ${{ github.repository }}
           echo "https://github.com/${{ github.repository }}/releases/download/$TAG/$APK_NAME"
