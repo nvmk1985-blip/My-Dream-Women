@@ -1064,10 +1064,31 @@ Each label: 1 sentence max.`;
       setInput('');
       setVideoLoading(true);
       try {
-        // 1. Try Cloudinary server first
-        let videos = await listCloudinaryVideos(persona.name).catch(() => []);
+        // 1. Try Cloudinary server first (may throw if server sleeping)
+        let videos: Array<{ url: string; public_id: string; format?: string }> = [];
+        let videoFetchError = false;
+        console.log('RESTORE PATH (video): my-girls/videos/' + persona.name.toLowerCase());
+        try {
+          videos = await listCloudinaryVideos(persona.name);
+          console.log('Videos found:', videos.length);
+        } catch {
+          // Server sleeping (timeout / network error) — do NOT fallback to empty cache
+          videoFetchError = true;
+          console.log('Videos found: ERROR (server sleeping)');
+        }
 
-        // 2. Fallback: local AsyncStorage (handles Tamil folder name issues)
+        // 2. If server error → show retry message (not "no video")
+        if (videoFetchError) {
+          setMessages(prev => [...prev, {
+            id: (Date.now()+1).toString(), role: 'assistant',
+            content: `⚠️ Server wake ஆகுது (30-60 sec).\n\n"video வேணும்" என்று மீண்டும் type பண்ணுங்க — video கிடைக்கும்!`,
+            timestamp: new Date(),
+          }]);
+          setVideoLoading(false);
+          return;
+        }
+
+        // 3. Fallback: local AsyncStorage only when server returned 0 (truly empty folder)
         if (!videos || videos.length === 0) {
           try {
             const LOCAL_VIDEO_KEY = 'my_girls_cloud_videos';
@@ -1078,6 +1099,7 @@ Each label: 1 sentence max.`;
           } catch {}
         }
 
+        console.log('Final UI media count (video):', videos ? videos.length : 0);
         if (videos && videos.length > 0) {
           const idxKey = `video_idx_${persona.id}`;
           const savedIdx = await AsyncStorage.getItem(idxKey).catch(() => null);
@@ -1303,6 +1325,7 @@ Each label: 1 sentence max.`;
     // 2. Cache empty (reinstall / first run) → rebuild from Cloudinary before generating
     if (photos.length === 0) {
       const folder = `my-girls/${persona.id}/${styleId}`;
+      console.log('RESTORE PATH (gallery):', folder);
 
       // Show "fetching from cloud" message while waiting
       const fetchingId = Date.now().toString();
@@ -1316,6 +1339,7 @@ Each label: 1 sentence max.`;
       let cloudFetchError = false;
       try {
         const cloudImgs = await listCloudinaryImages(folder);
+        console.log('Cloudinary response (gallery):', cloudImgs.length, 'images found');
         if (cloudImgs.length > 0) {
           photos = cloudImgs.map(i => ({ url: i.url, public_id: i.public_id }));
           // Rebuild local cache so next tap is instant
@@ -1345,6 +1369,7 @@ Each label: 1 sentence max.`;
     }
 
     // 3. Nothing in cache OR cloud (truly empty folder) → generate new photo
+    console.log('Final UI media count (gallery):', photos.length);
     if (photos.length === 0) {
       handleGeneratePhoto(styleId);
       return;
@@ -1374,13 +1399,16 @@ Each label: 1 sentence max.`;
     try {
       // Primary: local AsyncStorage cache
       let photos = await getStylePhotos(persona.id, styleId);
-      // Fallback: try Cloudinary API if cache empty
+      // Fallback: try Cloudinary API if cache empty (may throw if server sleeping)
       if (photos.length === 0) {
         const folder = `my-girls/${persona.id}/${styleId}`;
-        const imgs = await listCloudinaryImages(folder).catch(() => []);
+        console.log('RESTORE PATH (browse):', folder);
+        const imgs = await listCloudinaryImages(folder); // throws on timeout/network
+        console.log('Cloudinary response (browse):', imgs.length, 'images found');
         photos = imgs.map(i => ({ url: i.url, public_id: i.public_id }));
         photos.forEach(p => addStylePhoto(persona!.id, styleId, p));
       }
+      console.log('Final UI media count (browse):', photos.length);
       if (photos.length === 0) {
         const styleLabel = PHOTO_STYLES.find(s => s.id === styleId)?.label ?? styleId;
         Alert.alert(
@@ -1392,8 +1420,15 @@ Each label: 1 sentence max.`;
         setCloudPhotos(photos.map(p => ({ url: p.url, public_id: p.public_id, width: 0, height: 0 })));
       }
     } catch {
-      Alert.alert('Error', 'Photos load பண்ண முடியல. Try again.');
+      // Server sleeping (timeout/network error) — show retry message, don't say "empty"
+      const styleLabel = PHOTO_STYLES.find(s => s.id === styleId)?.label ?? styleId;
       setShowCloudBrowser(false);
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(), role: 'assistant',
+        content: `⚠️ Server wake ஆகுது (30-60 sec).\n\n"📷 ${styleLabel}" என்று மீண்டும் தட்டினால் photos கிடைக்கும்.\n\nபுதிய photo generate வேண்டுமா? "Generate" என்று type பண்ணுங்க.`,
+        timestamp: new Date(),
+      }]);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 200);
     } finally {
       setLoadingCloud(false);
     }
@@ -1475,6 +1510,7 @@ Each label: 1 sentence max.`;
 
       // Save to persona+style specific folder & cache the URL locally for instant modal loading
       const saveFolder = persona ? `${persona.id}/${effectiveStyleId}` : 'ai';
+      console.log('UPLOAD PATH:', `my-girls/${saveFolder}`);
       saveGeneratedImageToCloud(result.b64_json, result.mimeType, saveFolder).then(cloudImg => {
         if (cloudImg && persona) {
           addStylePhoto(persona.id, effectiveStyleId, { url: cloudImg.url, public_id: cloudImg.public_id });
